@@ -1,0 +1,23 @@
+=== NOI DUNG DOCX ===
+
+[Normal] Câu 1:
+[Normal] - Yêu cầu đối với kiểu bài:
+[List Paragraph] • Về nội dung:
+[List Paragraph] + Nêu được một số nét đặc sắc về nội dung của tác phẩm (từ ngữ, hình ảnh, chủ đề tư tưởng, cảm hứng, thông điệp...) và nghệ thuật của tác phẩm (từ ngữ, hình ảnh, bố cục, thể thơ, vần, nhịp, các biện pháp nghệ thuật trong bài thơ; chất liệu, bố cục, màu sắc, chi tiết nghệ thuật... của bức tranh/ pho tượng).
+[List Paragraph] + Có những lí lẽ xác đáng, hợp lí dựa trên các bằng chứng tiêu biểu từ tác phẩm.
+[List Paragraph] • Về hình thức, đảm bảo các yêu cầu của kiểu bài nghị luận: lập luận chặt chẽ; kết hợp các thao tác nghị luận; diễn đạt mạch lạc; sử dụng các phương tiện liên kết hợp lí để giúp người đọc nhận ra mạch lập luận.
+[List Paragraph] • Bố cục đảm bảo ba phần:
+[List Paragraph] Mở bài: Giới thiệu vấn đề nghị luận (tên tác phẩm, tác giả, khái quát nội dung, ý nghĩa của tác phẩm hoặc nêu định hướng của bài viết).
+[List Paragraph] Thân bài: Lần lượt trình bày các luận điểm về những nét đặc sắc về nội dung và hình thức nghệ thuật; đưa ra lí lẽ và bằng chứng đa dạng, thuyết phục để làm sáng tỏ luận điểm; các luận điểm, lí lẽ, bằng chứng được sắp xếp theo trình tự hợp lí.
+[List Paragraph] Kết bài: Khẳng định giá trị của tác phẩm hoặc nếu ý nghĩa của tác phẩm đối với bản thân/ người đọc.
+[Normal] Câu 2:
+[Normal] - Yêu cầu đối với kiểu bài:
+[Normal] • Về nội dung: Nêu và nhận xét được một số nét đặc sắc về nội dung và nghệ thuật của truyện thơ/ bài hát dựa trên những lí lẽ xác đáng và bằng chứng tiêu biểu, hợp lí được lấy từ tác phẩm.
+[Normal] • Về hình thức: Đảm bảo các yêu cầu của kiểu bài nghị luận như lập luận chặt chẽ, diễn đạt mạch lạc; sử dụng các phương tiện liên kết văn bản và kết hợp các thao tác lập luận hợp lí. • Bố cục bài viết gồm ba phần:
+[Normal] + Mở bài: Giới thiệu vấn đề nghị luận (tên truyện thơ/ bài hát, tác giả, khái quát nội dung chính của tác phẩm) hoặc nêu định hướng của bài viết.
+[Normal] + Thân bài: Lần lượt trình bày các luận điểm để làm nổi bật những nét đặc sắc về nội dung và hình thức nghệ thuật; đưa ra lí lẽ và bằng chứng đa dạng, thuyết phục để làm sáng tỏ luận
+[Normal] điểm; các luận điểm, lí lẽ, bằng chứng được sắp xếp theo trình tự hợp lí.
+[Normal] + Kết bài: Khẳng định ý kiến về giá trị của tác phẩm hoặc nêu ý nghĩa của tác phẩm đối với bản thân và người đọc/ người nghe.
+
+=== BANG (TABLES) ===
+
