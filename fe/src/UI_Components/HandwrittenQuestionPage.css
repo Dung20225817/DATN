@@ -3,7 +3,7 @@
    ============================================ */
 
 .handwritten-container {
-  margin-top: 90px;
+  margin-top: calc(var(--top-menu-height) + var(--spacing-4));
   padding: var(--spacing-6);
   max-width: 1400px;
   margin-left: auto;
@@ -148,6 +148,7 @@
 
 .submit-btn {
   padding: var(--spacing-4) var(--spacing-10);
+  min-height: 44px;
   font-size: 1.125rem;
   background: var(--gradient-success);
   color: white;
@@ -254,6 +255,7 @@
   width: 100%;
   margin-top: var(--spacing-3);
   padding: var(--spacing-4);
+  min-height: 44px;
   background: var(--color-neutral-100);
   border: 2px solid var(--color-neutral-200);
   border-radius: var(--radius-md);
@@ -280,6 +282,7 @@
 .popup-cancel {
   margin-top: var(--spacing-4);
   padding: var(--spacing-3) var(--spacing-5);
+  min-height: 44px;
   width: 100%;
   border: none;
   border-radius: var(--radius-md);
@@ -325,7 +328,7 @@
 @media (max-width: 768px) {
   .handwritten-container {
     padding: var(--spacing-4);
-    margin-top: 80px;
+    margin-top: calc(var(--top-menu-height) + var(--spacing-3));
   }
 
   .upload-box,
@@ -336,5 +339,40 @@
 
   .result-box {
     padding: var(--spacing-4);
+  }
+
+  .upload-area {
+    gap: var(--spacing-3);
+  }
+
+  .result-box pre {
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .handwritten-container {
+    padding: var(--spacing-3);
+  }
+
+  .upload-box,
+  .preview-item {
+    width: 104px;
+    height: 104px;
+  }
+
+  .submit-btn {
+    width: 100%;
+    padding-inline: var(--spacing-4);
+  }
+
+  .popup-box {
+    width: calc(100% - 1rem);
+    max-width: none;
+  }
+
+  .view-large {
+    max-width: 95%;
+    max-height: 86%;
   }
 }

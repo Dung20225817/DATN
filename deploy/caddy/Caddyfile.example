@@ -1,0 +1,27 @@
+# Replace with your real domain name.
+# DNS A record must point this domain to your server public IP.
+
+exam.yourdomain.com {
+    encode gzip zstd
+
+    # Frontend static build
+    root * /var/www/ocr-crnn/fe/dist
+    file_server
+
+    # Backend API
+    handle_path /api/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    # Backend static files (images, uploads)
+    handle_path /static/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    # Optional: larger uploads for image batches
+    request_body {
+        max_size 80MB
+    }
+
+    # TLS is automatic with Let's Encrypt in Caddy.
+}

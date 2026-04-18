@@ -1,5 +1,5 @@
 ﻿import TopMenu from "../UI_Components/TopMenu";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import "../UI_Components/HandwrittenQuestionPage.css";
 import ImagePreviewList from "../UI_Components/ImagePreviewList";
 import ImageUploader from "../UI_Components/ImageUploader.tsx";
@@ -11,6 +11,37 @@ type AnswerKeyItem = {
   ocrid: number;
   ocr_name: string;
   created_at?: string;
+};
+
+type RagasAnalysis = {
+  true_positives?: string[];
+  false_positives?: string[];
+  false_negatives?: string[];
+};
+
+type EssayQuestionResult = {
+  id?: string;
+  score?: number;
+  max_score?: number;
+  content?: string;
+  answer_key_used?: string;
+  answer_correctness?: number;
+  answer_correctness_reason?: string;
+  feedback?: string;
+  ragas_analysis?: RagasAnalysis;
+  strict_json_output?: unknown;
+};
+
+type EssayResult = {
+  file?: string;
+  total_score?: number;
+  total_max_score?: number;
+  recognized_text?: string;
+  questions?: EssayQuestionResult[];
+};
+
+type HandwrittenServerResult = {
+  results?: EssayResult[];
 };
 
 export default function HandwrittenQuestionPage() {
@@ -29,7 +60,7 @@ export default function HandwrittenQuestionPage() {
   const [useAnswerCorrectness, setUseAnswerCorrectness] = useState(true);
   const [ocrModel, setOcrModel] = useState<"openai_gpt4o" | "openai_gpt4o_mini">("openai_gpt4o_mini");
 
-  const [serverResult, setServerResult] = useState<any>(null);
+  const [serverResult, setServerResult] = useState<HandwrittenServerResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -38,7 +69,7 @@ export default function HandwrittenQuestionPage() {
 
   const uid = Number(localStorage.getItem("uid") || "0");
 
-  const loadAnswerKeys = async () => {
+  const loadAnswerKeys = useCallback(async () => {
     if (!uid) return;
     try {
       const res = await fetch(API_CONFIG.HANDWRITTEN.LIST_ANSWER_KEYS(uid));
@@ -46,17 +77,15 @@ export default function HandwrittenQuestionPage() {
       const data = await res.json();
       const keys = data.answer_keys || [];
       setAnswerKeys(keys);
-      if (!selectedAnswerKeyId && keys.length > 0) {
-        setSelectedAnswerKeyId(keys[0].ocrid);
-      }
+      setSelectedAnswerKeyId((prev) => prev ?? (keys.length > 0 ? keys[0].ocrid : null));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [uid]);
 
   useEffect(() => {
-    loadAnswerKeys();
-  }, []);
+    void loadAnswerKeys();
+  }, [loadAnswerKeys]);
 
   const handleAnswerKeyFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -242,7 +271,7 @@ export default function HandwrittenQuestionPage() {
     <div>
       <TopMenu />
       <div className="handwritten-container">
-        <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
           <button className="submit-btn" onClick={() => setMode("upload")} style={{ opacity: mode === "upload" ? 1 : 0.7 }}>
             Tải đáp án
           </button>
@@ -252,7 +281,7 @@ export default function HandwrittenQuestionPage() {
         </div>
 
         {mode === "upload" && (
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
             <div style={{ padding: "16px", border: "2px solid #1976d2", borderRadius: "10px", backgroundColor: "#e3f2fd" }}>
               <h2 style={{ marginTop: 0 }}>Tải đáp án</h2>
               <input type="file" accept=".doc,.docx,.pdf,.txt" onChange={handleAnswerKeyFileChange} disabled={isUploadingAnswerKey} />
@@ -284,7 +313,7 @@ export default function HandwrittenQuestionPage() {
                   <div style={{ fontSize: "12px", color: "#666", marginBottom: "8px" }}>
                     {item.created_at ? new Date(item.created_at).toLocaleString("vi-VN") : ""}
                   </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <button onClick={() => handleLoadOldAnswer(item.ocrid)}>Tải đáp án cũ</button>
                     <button onClick={() => handleDownloadAnswer(item.ocrid)}>Tải file</button>
                     <button onClick={() => handleDeleteAnswer(item.ocrid)}>Xóa</button>
@@ -349,8 +378,10 @@ export default function HandwrittenQuestionPage() {
 
       {showPopup && (
         <UploadPopup
-          onSelect={(files: FileList) => {
-            handleImages(files);
+          onSelect={(files: FileList | null) => {
+            if (files) {
+              handleImages(files);
+            }
             setShowPopup(false);
           }}
           onClose={() => setShowPopup(false)}
@@ -368,13 +399,17 @@ export default function HandwrittenQuestionPage() {
       {serverResult && serverResult.results && (
         <div className="result-box">
           <h3>Kết quả chấm điểm</h3>
-          {serverResult.results.map((essayResult: any, essayIndex: number) => {
+          {serverResult.results.map((essayResult: EssayResult, essayIndex: number) => {
             const totalMax = essayResult.total_max_score || (essayResult.questions?.length || 0) * 10;
+            const totalScoreLabel =
+              typeof essayResult.total_score === "number"
+                ? essayResult.total_score.toFixed(1)
+                : essayResult.total_score ?? "-";
             return (
               <div key={essayIndex} style={{ border: "2px solid #bcccdc", padding: "20px", marginBottom: "20px", borderRadius: "10px", backgroundColor: "#f8fbff", color: "#102a43" }}>
                 <h4 style={{ marginTop: 0 }}>Bài {essayIndex + 1}: {essayResult.file}</h4>
                 <div style={{ fontSize: "24px", fontWeight: "bold", textAlign: "center", marginBottom: "12px", color: "#0b3d91" }}>
-                  Tổng điểm: {essayResult.total_score?.toFixed?.(1) ?? essayResult.total_score} / {totalMax}
+                  Tổng điểm: {totalScoreLabel} / {totalMax}
                 </div>
 
                 <div style={{ border: "1px solid #d9e2ec", padding: "12px", marginBottom: "12px", borderRadius: "8px", backgroundColor: "#ffffff" }}>
@@ -384,7 +419,7 @@ export default function HandwrittenQuestionPage() {
                   </pre>
                 </div>
 
-                {essayResult.questions?.map((q: any, idx: number) => (
+                {essayResult.questions?.map((q: EssayQuestionResult, idx: number) => (
                   <div key={idx} style={{ border: "1px solid #d9e2ec", padding: "12px", marginBottom: "10px", borderRadius: "8px", backgroundColor: "#ffffff", color: "#243b53" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                       <strong>{q.id}</strong>

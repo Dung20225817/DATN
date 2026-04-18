@@ -3,7 +3,14 @@
  * Centralized API endpoint management
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const envApiBaseUrl = (import.meta.env.VITE_API_URL || "").trim();
+const isLoopbackApiBase = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(envApiBaseUrl);
+
+const API_BASE_URL = import.meta.env.DEV
+  // In dev, force same-origin (/api) when env points to localhost so LAN devices work via Vite proxy.
+  ? (envApiBaseUrl && !isLoopbackApiBase ? envApiBaseUrl : "")
+  // In production behind reverse proxy (Nginx/Caddy), default to same-origin.
+  : (envApiBaseUrl || "");
 
 export const API_CONFIG = {
   BASE_URL: API_BASE_URL,
@@ -29,11 +36,15 @@ export const API_CONFIG = {
   OMR: {
     GRADE: `${API_BASE_URL}/api/omr/grade`,
     GRADE_BATCH: `${API_BASE_URL}/api/omr/grade-batch`,
-    CREATE_TEMPLATE: `${API_BASE_URL}/api/omr/template`,
-    SAVE_TEMPLATE: `${API_BASE_URL}/api/omr/template/save`,
+    LIST_FORM_SAMPLES: `${API_BASE_URL}/api/omr/form-samples`,
+    LIST_FORM_PROFILES: `${API_BASE_URL}/api/omr/form-profiles`,
+    GET_FORM_PROFILE: (code: string) => `${API_BASE_URL}/api/omr/form-profiles/${code}`,
+    SAVE_FORM_PROFILE: `${API_BASE_URL}/api/omr/form-profiles`,
     SUGGEST_CROP: `${API_BASE_URL}/api/omr/suggest-crop`,
-    LIST_TESTS: (uid: number) => `${API_BASE_URL}/api/omr/tests/${uid}`,
-    DELETE_TEST: (uid: number, omrid: number) => `${API_BASE_URL}/api/omr/tests/${uid}/${omrid}`,
+    CREATE_ASSIGNMENT: `${API_BASE_URL}/api/omr/assignments`,
+    LIST_ASSIGNMENTS: (uid: number) => `${API_BASE_URL}/api/omr/assignments/${uid}`,
+    UPDATE_ASSIGNMENT: (uid: number, aid: number) => `${API_BASE_URL}/api/omr/assignments/${uid}/${aid}`,
+    DELETE_ASSIGNMENT: (uid: number, aid: number) => `${API_BASE_URL}/api/omr/assignments/${uid}/${aid}`,
   },
   
 };
@@ -46,14 +57,14 @@ export async function apiCall<T>(
   options?: RequestInit
 ): Promise<{ data: T; error: null } | { data: null; error: string }> {
   try {
+    const headers = new Headers(options?.headers);
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        "Content-Type": options?.headers instanceof Headers 
-          ? undefined 
-          : "application/json",
-        ...options?.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {

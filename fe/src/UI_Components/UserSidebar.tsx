@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import "./UserSidebar.css";
-import { API_CONFIG } from "../config/api";
 
 interface UserSidebarProps {
     isOpen: boolean;
@@ -12,7 +11,7 @@ interface User {
     user_name: string;
     email: string;
     uid?: number;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export default function UserSidebar({ isOpen, onClose }: UserSidebarProps) {

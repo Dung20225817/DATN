@@ -17,6 +17,7 @@
 8. [API Endpoints](#api-endpoints)
 9. [Hướng dẫn sử dụng](#hướng-dẫn-sử-dụng)
 10. [Troubleshooting](#troubleshooting)
+11. [Production HTTPS (Domain + Let's Encrypt)](deploy/HTTPS_PRODUCTION_CADDY.md)
 
 ---
 
@@ -622,6 +623,7 @@ Câu 2: Nội dung đáp án câu 2...
 | CRAFT ValueError: inhomogeneous | NumPy 2.x issue | Use SafeNP proxy |
 | opencv downgrade | craft-text-detector deps | Force install 4.12.0.88 |
 | Qwen2VL OutOfMemory | Large model | Use LLaVA or VietOCR mode |
+| `KeyboardInterrupt` + `asyncio.exceptions.CancelledError` khi tắt `uvicorn --reload` | Dừng server bằng `Ctrl+C` trong lúc reloader đang shutdown | Đây là shutdown bình thường; bấm `Ctrl+C` 1 lần và chờ 1-2s để tiến trình dừng sạch |
 
 ---
 

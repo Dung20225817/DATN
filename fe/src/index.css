@@ -5,6 +5,9 @@
    CSS CUSTOM PROPERTIES (Design Tokens)
    ============================================ */
 :root {
+  --top-menu-height: 70px;
+  --app-max-width: 1200px;
+
   /* Primary Colors - Vibrant Blue-Purple Gradient */
   --color-primary-50: #f5f3ff;
   --color-primary-100: #ede9fe;
@@ -118,16 +121,27 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
   font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
 }
 
 #root {
-  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+  display: block;
 }
 
 /* ============================================
@@ -140,17 +154,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 h1 {
-  font-size: 2.5rem;
+  font-size: clamp(1.625rem, 4.2vw, 2.5rem);
   margin-bottom: var(--spacing-4);
 }
 
 h2 {
-  font-size: 2rem;
+  font-size: clamp(1.375rem, 3.6vw, 2rem);
   margin-bottom: var(--spacing-3);
 }
 
 h3 {
-  font-size: 1.5rem;
+  font-size: clamp(1.125rem, 3vw, 1.5rem);
   margin-bottom: var(--spacing-3);
 }
 
@@ -185,6 +199,7 @@ button {
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   padding: var(--spacing-3) var(--spacing-5);
+  min-height: 44px;
   font-size: 1rem;
   font-weight: 600;
   font-family: inherit;
@@ -193,6 +208,28 @@ button {
   cursor: pointer;
   transition: all var(--transition-base);
   box-shadow: var(--shadow-md);
+}
+
+input,
+select,
+textarea {
+  min-height: 44px;
+  font: inherit;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-neutral-300);
+  width: 100%;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 3px solid var(--color-primary-300);
+  outline-offset: 1px;
+}
+
+.app-page {
+  width: min(var(--app-max-width), 100% - 2rem);
+  margin-inline: auto;
 }
 
 button:hover {
@@ -256,6 +293,35 @@ button:disabled {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --top-menu-height: 60px;
+  }
+
+  .app-page {
+    width: calc(100% - 1rem);
+  }
+
+  p {
+    margin-bottom: var(--spacing-3);
+  }
+}
+
+@media (max-width: 430px) {
+  :root {
+    --spacing-6: 1.25rem;
+    --spacing-8: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }
 

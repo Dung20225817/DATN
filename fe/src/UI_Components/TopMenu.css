@@ -7,13 +7,14 @@
   top: 0;
   left: 0;
   width: 100%;
-  height: 70px;
+  height: var(--top-menu-height);
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   padding: 0 var(--spacing-6);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08);
   border-bottom: 1px solid rgba(255, 255, 255, 0.3);
   z-index: 1000;
@@ -43,6 +44,13 @@
   align-items: center;
   margin-left: auto;
   gap: var(--spacing-2);
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.right-menu::-webkit-scrollbar {
+  display: none;
 }
 
 /* Menu Links with Animated Underline */
@@ -53,6 +61,10 @@
   color: var(--color-neutral-700);
   font-weight: 600;
   padding: var(--spacing-2) var(--spacing-4);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-sm);
   transition: all var(--transition-base);
   overflow: hidden;
@@ -83,8 +95,8 @@
 
 /* User Icon with Glow */
 .user-icon {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: var(--spacing-2);
   cursor: pointer;
   color: var(--color-neutral-700);
@@ -109,16 +121,29 @@
 @media (max-width: 640px) {
   .top-menu {
     padding: 0 var(--spacing-4);
-    height: 60px;
+    height: var(--top-menu-height);
   }
 
   .menu-link {
     font-size: 0.85rem;
     padding: var(--spacing-2) var(--spacing-3);
+    white-space: nowrap;
   }
 
   .user-icon {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
+    margin-left: var(--spacing-2);
+  }
+}
+
+@media (max-width: 430px) {
+  .top-menu {
+    padding-inline: var(--spacing-2);
+  }
+
+  .menu-link {
+    font-size: 0.8rem;
+    padding-inline: var(--spacing-2);
   }
 }

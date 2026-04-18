@@ -1,4 +1,9 @@
-export default function UploadPopup({ onSelect, onClose }: any) {
+type UploadPopupProps = {
+    onSelect: (files: FileList | null) => void;
+    onClose: () => void;
+};
+
+export default function UploadPopup({ onSelect, onClose }: UploadPopupProps) {
     return (
         <div className="popup-overlay" onClick={onClose}>
             <div className="popup-box" onClick={e => e.stopPropagation()}>

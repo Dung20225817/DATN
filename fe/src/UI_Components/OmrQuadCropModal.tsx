@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 type CropPoint = { x: number; y: number };
 
@@ -25,16 +25,15 @@ export default function OmrQuadCropModal({
     onConfirm,
 }: OmrQuadCropModalProps) {
     const imgRef = useRef<HTMLImageElement | null>(null);
-    const [points, setPoints] = useState<CropPoint[]>(defaultPoints());
+    const initialNormalizedPoints = useMemo(
+        () =>
+            initialPoints.length === 4
+                ? initialPoints.map((p) => ({ x: clamp01(p.x), y: clamp01(p.y) }))
+                : defaultPoints(),
+        [initialPoints]
+    );
+    const [points, setPoints] = useState<CropPoint[]>(initialNormalizedPoints);
     const [dragIndex, setDragIndex] = useState<number | null>(null);
-
-    useEffect(() => {
-        if (initialPoints.length === 4) {
-            setPoints(initialPoints.map((p) => ({ x: clamp01(p.x), y: clamp01(p.y) })));
-        } else {
-            setPoints(defaultPoints());
-        }
-    }, [initialPoints]);
 
     const polygon = useMemo(() => points.map((p) => `${p.x * 100},${p.y * 100}`).join(" "), [points]);
 
