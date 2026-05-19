@@ -2,16 +2,15 @@
 
 import logging
 import logging.handlers
-import os
 import sys
 from datetime import datetime
 
-# Create logs directory
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
+from app.core.paths import LOGS_DIR
+
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Log file name with date
-LOG_FILE = os.path.join(LOG_DIR, f"app_{datetime.now().strftime('%Y%m%d')}.log")
+LOG_FILE = LOGS_DIR / f"app_{datetime.now().strftime('%Y%m%d')}.log"
 
 # Configure logging format
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

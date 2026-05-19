@@ -500,12 +500,23 @@ def _cluster_marker_rows(markers, min_x: float, max_x: float, min_y: float, max_
     return out
 
 
-def _infer_mcq_geometry_from_markers(markers, img_w: int, img_h: int) -> Dict[str, object]:
+def _infer_mcq_geometry_from_markers(
+    markers,
+    img_w: int,
+    img_h: int,
+    rows_per_block: Optional[int] = None,
+    block_count_hint: Optional[int] = None,
+) -> Dict[str, object]:
+    rows_hint = max(1, _safe_int(rows_per_block, 20))
+    blocks_hint = max(1, _safe_int(block_count_hint, 1))
+    long_form_mode = bool(rows_hint >= 25 or blocks_hint >= 4)
+    min_y_ratio = 0.30 if long_form_mode else 0.44
+
     rows = _cluster_marker_rows(
         markers,
         min_x=float(img_w) * 0.10,
         max_x=float(img_w) * 0.90,
-        min_y=float(img_h) * 0.44,
+        min_y=float(img_h) * float(min_y_ratio),
         max_y=float(img_h) * 0.98,
         y_tol=6.0,
     )
@@ -581,24 +592,39 @@ def _infer_mcq_geometry_from_markers(markers, img_w: int, img_h: int) -> Dict[st
         fid_top_xs = _dedupe_x(fid_top.get("xs") or [], min_gap=float(img_w) * 0.08)
         if 2 <= len(fid_top_xs) <= 6:
             out["block_count"] = float(len(fid_top_xs))
+
+        # Use the row with most markers as the reference for block_count and right_x
+        # (bottom row may be partially off-page or cropped, giving too-small x_max)
+        best_fid_row = max(fid_rows, key=lambda r: int(r.get("count", 0)))
+        best_fid_xs = _dedupe_x(best_fid_row.get("xs") or [], min_gap=float(img_w) * 0.08)
+        if 2 <= len(best_fid_xs) <= 6 and len(best_fid_xs) >= len(fid_top_xs):
+            out["block_count"] = float(len(best_fid_xs))
+            fid_top_xs = best_fid_xs
+
         out["fid_top_y"] = float(fid_top.get("cy", 0.0))
         out["fid_bottom_y"] = float(fid_bottom.get("cy", 0.0))
-        out["fid_left_x"] = float(
-            np.median(
-                [
-                    float(fid_top.get("x_min", 0.0)),
-                    float(fid_bottom.get("x_min", 0.0)),
-                ]
-            )
-        )
-        out["fid_right_x"] = float(
-            np.median(
-                [
-                    float(fid_top.get("x_max", 0.0)),
-                    float(fid_bottom.get("x_max", 0.0)),
-                ]
-            )
-        )
+
+        # For left/right x: use median of rows that have the full complement of fid markers
+        expected_count = int(out.get("block_count", len(fid_top_xs)))
+        full_rows = [r for r in fid_rows if int(r.get("count", 0)) >= expected_count]
+        if not full_rows:
+            full_rows = fid_rows
+        out["fid_left_x"] = float(np.median([float(r.get("x_min", 0.0)) for r in full_rows]))
+        out["fid_right_x"] = float(np.median([float(r.get("x_max", 0.0)) for r in full_rows]))
+
+        # Compute fid_block_right_x: right edge of the last block column.
+        # The fid markers mark the LEFT edge of each block; the last block's right edge is
+        # fid_right_x + one block_width apart (same spacing as between consecutive fid columns).
+        n_fid = max(1, int(out.get("block_count", 1)))
+        fid_lx = float(out["fid_left_x"])
+        fid_rx = float(out["fid_right_x"])
+        if n_fid >= 2 and fid_rx > fid_lx:
+            fid_block_w = (fid_rx - fid_lx) / float(n_fid - 1)
+            out["fid_block_right_x"] = float(fid_rx + fid_block_w)
+            out["fid_block_width"] = float(fid_block_w)
+        else:
+            out["fid_block_right_x"] = fid_rx
+            out["fid_block_width"] = 0.0
 
     if bubble_rows:
         bubble_rows = sorted(bubble_rows, key=lambda row: float(row.get("cy", 0.0)))
@@ -685,6 +711,10 @@ def _infer_mcq_geometry_from_markers(markers, img_w: int, img_h: int) -> Dict[st
         out["top_center_y"] = float(top_bubble.get("cy", 0.0))
         out["bottom_center_y"] = float(bottom_bubble.get("cy", 0.0))
 
+    out["rows_per_block_hint"] = int(rows_hint)
+    out["block_count_hint"] = int(blocks_hint)
+    out["long_form_mode"] = bool(long_form_mode)
+
     return out
 
 
@@ -724,6 +754,16 @@ def build_mcq_roi_from_black_markers(
         meta["reason"] = "invalid-geometry"
         return base_roi, meta
 
+    rows_per_block_hint = max(1, _safe_int(mcq_geometry.get("rows_per_block_hint"), 20))
+    blocks_hint = max(
+        1,
+        _safe_int(
+            mcq_geometry.get("block_count_hint"),
+            _safe_int(mcq_geometry.get("block_count"), 1),
+        ),
+    )
+    long_form_mode = bool(rows_per_block_hint >= 25 or blocks_hint >= 4)
+
     y_top_fid = _safe_float(mcq_geometry.get("fid_top_y"), -1.0)
     y_bottom_fid = _safe_float(mcq_geometry.get("fid_bottom_y"), -1.0)
     fid_y_span = float(y_bottom_fid - y_top_fid)
@@ -746,36 +786,52 @@ def build_mcq_roi_from_black_markers(
     x_left_anchor = -1.0
     x_right_anchor = -1.0
 
-    raw_bands = mcq_geometry.get("block_bands")
-    if isinstance(raw_bands, (list, tuple)):
-        band_ranges: List[Tuple[float, float]] = []
-        for item in list(raw_bands):
-            if not isinstance(item, dict):
-                continue
-            bx1 = _safe_float(item.get("x_min"), -1.0)
-            bx2 = _safe_float(item.get("x_max"), -1.0)
-            if bx2 > bx1 > 0.0:
-                band_ranges.append((float(bx1), float(bx2)))
-        if band_ranges:
-            x_left_anchor = float(min(val[0] for val in band_ranges))
-            x_right_anchor = float(max(val[1] for val in band_ranges))
-            x_source = "block-bands"
+    if long_form_mode:
+        # For long forms, use fid_left_x and fid_block_right_x to get the exact column span.
+        # fid_left_x = x position of the leftmost fiducial (left edge of block 1)
+        # fid_block_right_x = extrapolated right edge of the last block
+        fid_lx = _safe_float(mcq_geometry.get("fid_left_x"), -1.0)
+        fid_rx = _safe_float(mcq_geometry.get("fid_block_right_x"), -1.0)
+        if fid_rx > fid_lx > 0.0:
+            x_left_anchor = float(fid_lx)
+            x_right_anchor = float(fid_rx)
+            x_source = "fid-block-span-long-form"
+        else:
+            x_left_anchor = float(x)
+            x_right_anchor = float(x + w)
+            x_source = "fallback-roi-long-form"
 
-    if x_right_anchor <= x_left_anchor:
-        x_left_geom = _safe_float(mcq_geometry.get("left_x"), -1.0)
-        x_right_geom = _safe_float(mcq_geometry.get("right_x"), -1.0)
-        if x_right_geom > x_left_geom:
-            x_left_anchor = float(x_left_geom)
-            x_right_anchor = float(x_right_geom)
-            x_source = "bubble-span"
+    if not long_form_mode:
+        raw_bands = mcq_geometry.get("block_bands")
+        if isinstance(raw_bands, (list, tuple)):
+            band_ranges: List[Tuple[float, float]] = []
+            for item in list(raw_bands):
+                if not isinstance(item, dict):
+                    continue
+                bx1 = _safe_float(item.get("x_min"), -1.0)
+                bx2 = _safe_float(item.get("x_max"), -1.0)
+                if bx2 > bx1 > 0.0:
+                    band_ranges.append((float(bx1), float(bx2)))
+            if band_ranges:
+                x_left_anchor = float(min(val[0] for val in band_ranges))
+                x_right_anchor = float(max(val[1] for val in band_ranges))
+                x_source = "block-bands"
 
-    if x_right_anchor <= x_left_anchor and fid_y_valid:
-        x_left_fid = _safe_float(mcq_geometry.get("fid_left_x"), -1.0)
-        x_right_fid = _safe_float(mcq_geometry.get("fid_right_x"), -1.0)
-        if x_right_fid > x_left_fid:
-            x_left_anchor = float(x_left_fid)
-            x_right_anchor = float(x_right_fid)
-            x_source = "fid"
+        if x_right_anchor <= x_left_anchor:
+            x_left_geom = _safe_float(mcq_geometry.get("left_x"), -1.0)
+            x_right_geom = _safe_float(mcq_geometry.get("right_x"), -1.0)
+            if x_right_geom > x_left_geom:
+                x_left_anchor = float(x_left_geom)
+                x_right_anchor = float(x_right_geom)
+                x_source = "bubble-span"
+
+        if x_right_anchor <= x_left_anchor and fid_y_valid:
+            x_left_fid = _safe_float(mcq_geometry.get("fid_left_x"), -1.0)
+            x_right_fid = _safe_float(mcq_geometry.get("fid_right_x"), -1.0)
+            if x_right_fid > x_left_fid:
+                x_left_anchor = float(x_left_fid)
+                x_right_anchor = float(x_right_fid)
+                x_source = "fid"
 
     if x_right_anchor <= x_left_anchor:
         x_left_anchor = float(x)
@@ -783,7 +839,10 @@ def build_mcq_roi_from_black_markers(
         x_source = "fallback-roi"
 
     anchor_span_y = float(y_bottom_anchor - y_top_anchor)
-    line_h_from_span = anchor_span_y / 16.0
+    if long_form_mode:
+        line_h_from_span = anchor_span_y / float(max(10, rows_per_block_hint))
+    else:
+        line_h_from_span = anchor_span_y / 16.0
     line_h_geom = _safe_float(mcq_geometry.get("line_h"), -1.0)
     if line_h_geom > 0.0 and line_h_from_span > 0.0 and (0.45 * line_h_from_span) <= line_h_geom <= (1.80 * line_h_from_span):
         line_h = float(line_h_geom)
@@ -897,6 +956,145 @@ def _cell_density(binary_cell) -> float:
     return float(cv2.countNonZero(binary_cell)) / area
 
 
+def _cell_dark_percentile(gray_cell, percentile: float = 20.0) -> float:
+    if gray_cell is None or getattr(gray_cell, "size", 0) <= 0:
+        return 0.0
+
+    p = max(1.0, min(50.0, float(percentile)))
+    val = float(np.percentile(gray_cell, p))
+    return max(0.0, min(1.0, 1.0 - (val / 255.0)))
+
+
+def _filter_binary_cell_noise(
+    binary_cell,
+    erode_iter: int = 1,
+    kernel_size: int = 2,
+    min_component_ratio: float = 0.012,
+):
+    if binary_cell is None or getattr(binary_cell, "size", 0) <= 0:
+        return binary_cell
+
+    out = (binary_cell > 0).astype(np.uint8) * 255
+    if cv2.countNonZero(out) <= 0:
+        return out
+
+    if int(erode_iter) > 0:
+        k = max(1, int(kernel_size))
+        kernel = np.ones((k, k), np.uint8)
+        out = cv2.erode(out, kernel, iterations=int(erode_iter))
+
+    ratio = max(0.0, float(min_component_ratio))
+    if ratio <= 0.0:
+        return out
+
+    mask = (out > 0).astype(np.uint8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if num_labels <= 1:
+        return out
+
+    area = float(max(1, out.shape[0] * out.shape[1]))
+    min_area = max(2, int(round(ratio * area)))
+    filtered = np.zeros_like(out)
+    for idx in range(1, num_labels):
+        comp_area = int(stats[idx, cv2.CC_STAT_AREA])
+        if comp_area >= min_area:
+            filtered[labels == idx] = 255
+
+    if cv2.countNonZero(filtered) <= 0 and cv2.countNonZero(out) > 0:
+        return out
+    return filtered
+
+
+def _row_candidate_quality(
+    density_scores: Sequence[float],
+    center_scores: Sequence[float],
+    dark_scores: Sequence[float],
+) -> Tuple[float, int, float, float]:
+    density_arr = np.asarray(list(density_scores or []), dtype=np.float32)
+    if density_arr.size <= 0:
+        return -1e9, -1, 0.0, 0.0
+
+    best_idx = int(np.argmax(density_arr))
+    best_score = float(density_arr[best_idx])
+    if density_arr.size >= 2:
+        two_best = np.partition(density_arr, -2)[-2:]
+        second_score = float(np.min(two_best))
+    else:
+        second_score = 0.0
+
+    margin = float(best_score - second_score)
+
+    center_arr = np.asarray(list(center_scores or []), dtype=np.float32)
+    dark_arr = np.asarray(list(dark_scores or []), dtype=np.float32)
+    best_center = float(center_arr[best_idx]) if best_idx >= 0 and best_idx < center_arr.size else 0.0
+    best_dark = float(dark_arr[best_idx]) if best_idx >= 0 and best_idx < dark_arr.size else 0.0
+
+    left_penalty = 0.0
+    if best_idx == 0 and margin < 0.08:
+        left_penalty = 0.20 * float(0.08 - margin)
+
+    quality = (
+        1.10 * float(best_score)
+        + 1.45 * float(margin)
+        + 0.25 * float(best_center)
+        + 0.12 * float(best_dark)
+        - float(left_penalty)
+    )
+    return float(quality), int(best_idx), float(best_score), float(second_score)
+
+
+def _compute_cell_mark_centroid(binary_inv, x1, y1, x2, y2, core_ratio: float = 0.72) -> Tuple[float, float]:
+    h, w = binary_inv.shape[:2]
+    ix1 = max(0, min(w - 1, int(round(x1))))
+    iy1 = max(0, min(h - 1, int(round(y1))))
+    ix2 = max(ix1 + 1, min(w, int(round(x2))))
+    iy2 = max(iy1 + 1, min(h, int(round(y2))))
+
+    fallback_cx = 0.5 * float(ix1 + ix2)
+    fallback_cy = 0.5 * float(iy1 + iy2)
+
+    patch = binary_inv[iy1:iy2, ix1:ix2]
+    if patch is None or patch.size == 0:
+        return fallback_cx, fallback_cy
+
+    ph, pw = patch.shape[:2]
+    ratio = max(0.45, min(1.0, float(core_ratio)))
+    ch = max(2, int(round(float(ph) * ratio)))
+    cw = max(2, int(round(float(pw) * ratio)))
+    sy = max(0, (ph - ch) // 2)
+    sx = max(0, (pw - cw) // 2)
+    core = patch[sy : sy + ch, sx : sx + cw]
+    if core is None or core.size == 0:
+        return fallback_cx, fallback_cy
+
+    core_clean = cv2.morphologyEx(core, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
+    if cv2.countNonZero(core_clean) <= 0:
+        core_clean = core
+    if cv2.countNonZero(core_clean) <= 0:
+        return fallback_cx, fallback_cy
+
+    core_mask = (core_clean > 0).astype(np.uint8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(core_mask, connectivity=8)
+    if num_labels > 1:
+        largest_idx = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        largest_area = int(stats[largest_idx, cv2.CC_STAT_AREA])
+        min_area = max(6, int(round(0.02 * float(max(1, core_mask.shape[0] * core_mask.shape[1])))))
+        if largest_area >= min_area:
+            component = np.zeros_like(core_mask)
+            component[labels == largest_idx] = 1
+            core_mask = component
+
+    moments = cv2.moments(core_mask, binaryImage=True)
+    if float(moments.get("m00", 0.0)) <= 0.0:
+        return fallback_cx, fallback_cy
+
+    local_cx = float(moments["m10"]) / float(moments["m00"])
+    local_cy = float(moments["m01"]) / float(moments["m00"])
+    cx = float(ix1 + sx + local_cx)
+    cy = float(iy1 + sy + local_cy)
+    return cx, cy
+
+
 def _parse_mcq_decode_config(profile_mcq_decode):
     cfg = profile_mcq_decode if isinstance(profile_mcq_decode, dict) else {}
 
@@ -921,6 +1119,47 @@ def _parse_mcq_decode_config(profile_mcq_decode):
     soft_conf_ratio = max(1.02, min(2.50, soft_conf_ratio))
     enable_soft_single_mark_rescue = bool(cfg.get("enable_soft_single_mark_rescue", True))
 
+    # Additional anti-smudge / anti-fold gate:
+    # require selected bubble to be dense in center and dark enough.
+    noise_center_floor = _safe_float(
+        cfg.get("noise_center_floor", cfg.get("smudge_center_floor", 0.42)),
+        0.42,
+    )
+    noise_center_margin = _safe_float(
+        cfg.get("noise_center_margin", cfg.get("smudge_center_margin", 0.10)),
+        0.10,
+    )
+    noise_dark_floor = _safe_float(
+        cfg.get("noise_dark_floor", cfg.get("smudge_dark_floor", 0.30)),
+        0.30,
+    )
+    noise_dark_margin = _safe_float(
+        cfg.get("noise_dark_margin", cfg.get("smudge_dark_margin", 0.08)),
+        0.08,
+    )
+
+    noise_center_floor = max(0.34, min(0.70, noise_center_floor))
+    noise_center_margin = max(0.04, min(0.30, noise_center_margin))
+    noise_dark_floor = max(0.18, min(0.60, noise_dark_floor))
+    noise_dark_margin = max(0.02, min(0.25, noise_dark_margin))
+
+    local_grid_search = bool(cfg.get("local_grid_search", cfg.get("grid_search", False)))
+    local_grid_shift_ratio = _safe_float(cfg.get("local_grid_shift_ratio", 0.85), 0.85)
+    local_grid_y_shift_ratio = _safe_float(cfg.get("local_grid_y_shift_ratio", 0.18), 0.18)
+    local_anchor_momentum = _safe_float(cfg.get("local_anchor_momentum", 0.20), 0.20)
+
+    thin_noise_erode_iter = _safe_int(cfg.get("thin_noise_erode_iter", 1), 1)
+    thin_noise_kernel = _safe_int(cfg.get("thin_noise_kernel", 2), 2)
+    thin_noise_min_component_ratio = _safe_float(cfg.get("thin_noise_min_component_ratio", 0.012), 0.012)
+
+    local_grid_shift_ratio = max(0.0, min(1.60, local_grid_shift_ratio))
+    local_grid_y_shift_ratio = max(0.0, min(0.35, local_grid_y_shift_ratio))
+    local_anchor_momentum = max(0.02, min(0.80, local_anchor_momentum))
+
+    thin_noise_erode_iter = max(0, min(3, thin_noise_erode_iter))
+    thin_noise_kernel = max(1, min(4, thin_noise_kernel))
+    thin_noise_min_component_ratio = max(0.0, min(0.08, thin_noise_min_component_ratio))
+
     raw_offsets = cfg.get("row_offsets_px")
     if not isinstance(raw_offsets, (list, tuple)):
         raw_offsets = cfg.get("row_offsets")
@@ -941,6 +1180,17 @@ def _parse_mcq_decode_config(profile_mcq_decode):
         "soft_margin": float(soft_margin),
         "soft_conf_ratio": float(soft_conf_ratio),
         "enable_soft_single_mark_rescue": bool(enable_soft_single_mark_rescue),
+        "noise_center_floor": float(noise_center_floor),
+        "noise_center_margin": float(noise_center_margin),
+        "noise_dark_floor": float(noise_dark_floor),
+        "noise_dark_margin": float(noise_dark_margin),
+        "local_grid_search": bool(local_grid_search),
+        "local_grid_shift_ratio": float(local_grid_shift_ratio),
+        "local_grid_y_shift_ratio": float(local_grid_y_shift_ratio),
+        "local_anchor_momentum": float(local_anchor_momentum),
+        "thin_noise_erode_iter": int(thin_noise_erode_iter),
+        "thin_noise_kernel": int(thin_noise_kernel),
+        "thin_noise_min_component_ratio": float(thin_noise_min_component_ratio),
         "row_offsets_px": row_offsets_px,
     }
 
@@ -1008,7 +1258,23 @@ def _decode_mcq_with_map(
     soft_margin = float(decode_cfg.get("soft_margin", 0.06))
     soft_conf_ratio = float(decode_cfg.get("soft_conf_ratio", 1.18))
     enable_soft_single_mark_rescue = bool(decode_cfg.get("enable_soft_single_mark_rescue", True))
+    noise_center_floor = float(decode_cfg.get("noise_center_floor", 0.42))
+    noise_center_margin = float(decode_cfg.get("noise_center_margin", 0.10))
+    noise_dark_floor = float(decode_cfg.get("noise_dark_floor", 0.30))
+    noise_dark_margin = float(decode_cfg.get("noise_dark_margin", 0.08))
+
+    local_grid_search = bool(decode_cfg.get("local_grid_search", False))
+    local_grid_shift_ratio = float(decode_cfg.get("local_grid_shift_ratio", 0.85))
+    local_grid_y_shift_ratio = float(decode_cfg.get("local_grid_y_shift_ratio", 0.18))
+    local_anchor_momentum = float(decode_cfg.get("local_anchor_momentum", 0.20))
+
+    thin_noise_erode_iter = int(decode_cfg.get("thin_noise_erode_iter", 1))
+    thin_noise_kernel = int(decode_cfg.get("thin_noise_kernel", 2))
+    thin_noise_min_component_ratio = float(decode_cfg.get("thin_noise_min_component_ratio", 0.012))
+
     row_offsets_px = list(decode_cfg["row_offsets_px"])
+
+    block_anchor_shifts: List[float] = [0.0 for _ in range(block_count)]
 
     user_answers: List[int] = []
     answer_confidences: List[float] = []
@@ -1041,6 +1307,13 @@ def _decode_mcq_with_map(
                     "threshold": round(min_mark, 4),
                     "uncertain": True,
                     "cell_boxes": [],
+                    "cell_centroids": [],
+                    "selected_centroid": None,
+                    "grid_search_used": bool(local_grid_search),
+                    "local_x_shift_px": 0.0,
+                    "local_y_shift_px": 0.0,
+                    "block_anchor_shift_px": 0.0,
+                    "candidate_quality": 0.0,
                 }
             )
             continue
@@ -1063,8 +1336,15 @@ def _decode_mcq_with_map(
             band_left = raw_left
             band_right = raw_right
         else:
-            band_left = raw_left + 0.08 * raw_span
-            band_right = raw_right - 0.04 * raw_span
+            # Two-block long-row forms (e.g. 17 rows + 18-20 on block 2) often have
+            # extra blank margin at the right side of each block; trim right side harder
+            # to keep option D aligned with actual bubbles.
+            if int(block_count) == 2 and int(rows_per_block) >= 15:
+                band_left = raw_left + 0.10 * raw_span
+                band_right = raw_right - 0.18 * raw_span
+            else:
+                band_left = raw_left + 0.08 * raw_span
+                band_right = raw_right - 0.04 * raw_span
         if (band_right - band_left) < (0.60 * raw_span):
             band_left = raw_left
             band_right = raw_right
@@ -1082,45 +1362,195 @@ def _decode_mcq_with_map(
             y1 = max(y, min((y + h) - 2.0, cy))
             y2 = min(y + h, y1 + 2.0)
 
-        choice_scores: List[float] = []
-        density_scores: List[float] = []
-        cell_boxes: List[List[int]] = []
         x_inset = 0.08 if has_custom_bands else 0.14
-        for c_idx in range(int(choices)):
-            x1 = band_left + c_idx * choice_w + x_inset * choice_w
-            x2 = band_left + (c_idx + 1) * choice_w - x_inset * choice_w
-            x1 = max(x, x1)
-            x2 = min(x + w, x2)
 
-            if x2 <= x1 or y2 <= y1:
-                choice_scores.append(0.0)
-                density_scores.append(0.0)
-                cell_boxes.append([int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))])
-                continue
+        block_local_grid = bool(local_grid_search and (1 <= int(block_idx) <= max(1, int(block_count) - 2)))
 
-            cell_gray, cell_bin = _extract_cell(gray_img, binary_inv, x1, y1, x2, y2, inner_ratio=0.78)
-            density = _cell_density(cell_bin)
-            darkness = _cell_score(cell_gray, cell_bin)
-            score = float(0.90 * density + 0.10 * darkness)
-            density_scores.append(float(density))
-            choice_scores.append(float(score))
-            cell_boxes.append([int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))])
+        base_anchor_shift = float(block_anchor_shifts[block_idx]) if block_local_grid else 0.0
+        if not np.isfinite(base_anchor_shift):
+            base_anchor_shift = 0.0
+
+        shift_span = max(
+            1.5,
+            min(0.55 * float(choice_w), float(local_grid_shift_ratio) * 0.55 * float(choice_w)),
+        )
+        y_shift_step = max(0.0, min(4.5, float(local_grid_y_shift_ratio) * 0.50 * float(line_h)))
+
+        shift_offsets = [0.0]
+        y_offsets = [0.0]
+        if block_local_grid:
+            shift_offsets = [
+                0.0,
+                -0.25 * shift_span,
+                0.25 * shift_span,
+                -0.50 * shift_span,
+                0.50 * shift_span,
+            ]
+            if y_shift_step >= 0.5:
+                y_offsets = [0.0, -1.0 * y_shift_step, 1.0 * y_shift_step]
+
+        def _evaluate_row_candidate(cand_x_shift: float, cand_y_shift: float):
+            band_span = max(8.0, float(band_right - band_left))
+            cand_left = float(band_left + cand_x_shift)
+            cand_left = max(float(x), min(float(x + w - band_span), cand_left))
+            cand_right = float(cand_left + band_span)
+
+            y_span = max(2.0, float(y2 - y1))
+            cand_y1 = float(y1 + cand_y_shift)
+            cand_y1 = max(float(y), min(float(y + h - y_span), cand_y1))
+            cand_y2 = float(cand_y1 + y_span)
+
+            choice_scores: List[float] = []
+            density_scores: List[float] = []
+            center_density_scores: List[float] = []
+            dark_p20_scores: List[float] = []
+            cell_boxes: List[List[int]] = []
+            cell_centroids: List[List[float]] = []
+
+            for c_idx in range(int(choices)):
+                cx1 = cand_left + c_idx * choice_w + x_inset * choice_w
+                cx2 = cand_left + (c_idx + 1) * choice_w - x_inset * choice_w
+                cx1 = max(x, cx1)
+                cx2 = min(x + w, cx2)
+
+                if cx2 <= cx1 or cand_y2 <= cand_y1:
+                    choice_scores.append(0.0)
+                    density_scores.append(0.0)
+                    center_density_scores.append(0.0)
+                    dark_p20_scores.append(0.0)
+                    cell_boxes.append([int(round(cx1)), int(round(cand_y1)), int(round(cx2)), int(round(cand_y2))])
+                    cell_centroids.append([
+                        float(0.5 * (cx1 + cx2)),
+                        float(0.5 * (cand_y1 + cand_y2)),
+                    ])
+                    continue
+
+                cell_gray, cell_bin_raw = _extract_cell(gray_img, binary_inv, cx1, cand_y1, cx2, cand_y2, inner_ratio=0.78)
+                _, center_bin_raw = _extract_cell(gray_img, binary_inv, cx1, cand_y1, cx2, cand_y2, inner_ratio=0.56)
+
+                cell_bin = _filter_binary_cell_noise(
+                    cell_bin_raw,
+                    erode_iter=thin_noise_erode_iter,
+                    kernel_size=thin_noise_kernel,
+                    min_component_ratio=thin_noise_min_component_ratio,
+                )
+                center_bin = _filter_binary_cell_noise(
+                    center_bin_raw,
+                    erode_iter=thin_noise_erode_iter,
+                    kernel_size=thin_noise_kernel,
+                    min_component_ratio=0.65 * float(thin_noise_min_component_ratio),
+                )
+
+                density = _cell_density(cell_bin)
+                center_density = _cell_density(center_bin)
+                darkness = _cell_score(cell_gray, cell_bin)
+                dark_p20 = _cell_dark_percentile(cell_gray, percentile=20.0)
+                score = float(0.90 * density + 0.10 * darkness)
+
+                density_scores.append(float(density))
+                center_density_scores.append(float(center_density))
+                dark_p20_scores.append(float(dark_p20))
+                choice_scores.append(float(score))
+
+                cell_boxes.append([int(round(cx1)), int(round(cand_y1)), int(round(cx2)), int(round(cand_y2))])
+                centroid_x, centroid_y = _compute_cell_mark_centroid(binary_inv, cx1, cand_y1, cx2, cand_y2, core_ratio=0.72)
+                cell_centroids.append([float(centroid_x), float(centroid_y)])
+
+            quality, cand_best_idx, cand_best_score, cand_second_score = _row_candidate_quality(
+                density_scores,
+                center_density_scores,
+                dark_p20_scores,
+            )
+
+            return {
+                "quality": float(quality),
+                "best_idx": int(cand_best_idx),
+                "best_score": float(cand_best_score),
+                "second_score": float(cand_second_score),
+                "margin": float(cand_best_score - cand_second_score),
+                "x_shift": float(cand_left - band_left),
+                "y_shift": float(cand_y1 - y1),
+                "band_left": float(cand_left),
+                "band_right": float(cand_right),
+                "choice_scores": choice_scores,
+                "density_scores": density_scores,
+                "center_density_scores": center_density_scores,
+                "dark_p20_scores": dark_p20_scores,
+                "cell_boxes": cell_boxes,
+                "cell_centroids": cell_centroids,
+            }
+
+        best_candidate = None
+        best_rank = None
+        for y_off in y_offsets:
+            for x_off in shift_offsets:
+                cand = _evaluate_row_candidate(float(base_anchor_shift + x_off), float(y_off))
+                shift_penalty = 0.06 * abs(float(cand.get("x_shift", 0.0))) / max(1.0, float(choice_w))
+                y_penalty = 0.03 * abs(float(cand.get("y_shift", 0.0))) / max(1.0, float(line_h))
+                cand_rank = (
+                    float(cand["quality"]) - float(shift_penalty) - float(y_penalty),
+                    float(cand["best_score"]),
+                    float(cand["margin"]),
+                )
+                if best_candidate is None or cand_rank > best_rank:
+                    best_candidate = cand
+                    best_rank = cand_rank
+
+        if best_candidate is None:
+            best_candidate = _evaluate_row_candidate(0.0, 0.0)
+
+        row_x_shift_used = float(best_candidate.get("x_shift", 0.0))
+        row_y_shift_used = float(best_candidate.get("y_shift", 0.0))
+
+        choice_scores = list(best_candidate.get("choice_scores") or [])
+        density_scores = list(best_candidate.get("density_scores") or [])
+        center_density_scores = list(best_candidate.get("center_density_scores") or [])
+        dark_p20_scores = list(best_candidate.get("dark_p20_scores") or [])
+        cell_boxes = list(best_candidate.get("cell_boxes") or [])
+        cell_centroids = list(best_candidate.get("cell_centroids") or [])
+        candidate_quality = float(best_candidate.get("quality", 0.0))
 
         density_arr = np.asarray(density_scores, dtype=np.float32)
+        center_arr = np.asarray(center_density_scores, dtype=np.float32)
+        dark_arr = np.asarray(dark_p20_scores, dtype=np.float32)
         if density_arr.size <= 0:
             best_idx = -1
             best_score = 0.0
             second_score = 0.0
             row_mean = 0.0
+            row_center_mean = 0.0
+            row_dark_mean = 0.0
+            best_center = 0.0
+            best_dark = 0.0
         else:
             best_idx = int(np.argmax(density_arr))
             best_score = float(density_arr[best_idx])
             row_mean = float(np.mean(density_arr))
+            row_center_mean = float(np.mean(center_arr)) if center_arr.size > 0 else 0.0
+            row_dark_mean = float(np.mean(dark_arr)) if dark_arr.size > 0 else 0.0
+            best_center = float(center_arr[best_idx]) if best_idx < center_arr.size else 0.0
+            best_dark = float(dark_arr[best_idx]) if best_idx < dark_arr.size else 0.0
             if density_arr.size >= 2:
                 two_best = np.partition(density_arr, -2)[-2:]
                 second_score = float(np.min(two_best))
             else:
                 second_score = 0.0
+
+        if block_local_grid and 0 <= block_idx < len(block_anchor_shifts):
+            shift_ok = (
+                best_idx >= 0
+                and best_score >= max(0.22, 0.82 * float(min_mark))
+                and (best_score - second_score) >= 0.03
+            )
+            if shift_ok:
+                block_anchor_shifts[block_idx] = (
+                    (1.0 - float(local_anchor_momentum)) * float(block_anchor_shifts[block_idx])
+                    + float(local_anchor_momentum) * float(row_x_shift_used)
+                )
+            else:
+                block_anchor_shifts[block_idx] = (
+                    (1.0 - 0.35 * float(local_anchor_momentum)) * float(block_anchor_shifts[block_idx])
+                )
 
         dynamic_mark = float(min_mark)
         if adaptive_threshold and density_arr.size > 0:
@@ -1134,18 +1564,37 @@ def _decode_mcq_with_map(
             float(soft_mark_floor),
             float(row_mean + 0.08),
         )
+        soft_margin_req = float(soft_margin)
+        soft_conf_ratio_req = float(soft_conf_ratio)
+        soft_quality_req = 0.42
+        if block_local_grid:
+            # In middle long-form blocks, be stricter with soft rescue to suppress
+            # periodic false positives from printed text/noise near option columns.
+            soft_threshold = max(float(soft_threshold), float(dynamic_mark - 0.01))
+            soft_margin_req = max(float(soft_margin_req), 0.10)
+            soft_conf_ratio_req = max(float(soft_conf_ratio_req), 1.30)
+            soft_quality_req = 0.58
+
+        noise_center_gate = max(float(noise_center_floor), float(row_center_mean + noise_center_margin))
+        noise_dark_gate = max(float(noise_dark_floor), float(row_dark_mean + noise_dark_margin))
+        noise_center_gate = min(0.92, float(noise_center_gate))
+        noise_dark_gate = min(0.85, float(noise_dark_gate))
+        noise_gate_ok = bool((best_center >= noise_center_gate) and (best_dark >= noise_dark_gate))
         soft_rescue_ok = (
             bool(enable_soft_single_mark_rescue)
             and (best_idx >= 0)
             and (best_score >= soft_threshold)
-            and (margin >= soft_margin)
-            and (conf_ratio >= soft_conf_ratio)
+            and (margin >= soft_margin_req)
+            and (conf_ratio >= soft_conf_ratio_req)
+            and (candidate_quality >= soft_quality_req)
+            and bool(noise_gate_ok)
         )
 
         marked_indices = [int(i) for i, val in enumerate(density_scores) if float(val) >= dynamic_mark]
         is_double_mark = len(marked_indices) >= 2
         resolved_by_highest = False
         resolved_by_soft = False
+        noise_rejected = False
 
         if best_idx < 0 or best_score < dynamic_mark:
             if (not is_double_mark) and soft_rescue_ok:
@@ -1169,8 +1618,20 @@ def _decode_mcq_with_map(
             else:
                 selected = int(best_idx)
 
+        if selected >= 0 and not noise_gate_ok:
+            selected = -1
+            noise_rejected = True
+            if q_num not in uncertain_questions:
+                uncertain_questions.append(q_num)
+
         user_answers.append(int(selected))
         answer_confidences.append(round(float(best_score), 4))
+
+        selected_centroid = None
+        if selected >= 0 and selected < len(cell_centroids):
+            sel_pt = cell_centroids[selected]
+            if isinstance(sel_pt, list) and len(sel_pt) == 2:
+                selected_centroid = [round(float(sel_pt[0]), 2), round(float(sel_pt[1]), 2)]
 
         rows_payload.append(
             {
@@ -1178,19 +1639,34 @@ def _decode_mcq_with_map(
                 "block": int(block_idx + 1),
                 "row": int(row_idx + 1),
                 "scores": [round(float(s), 5) for s in density_scores],
+                "center_scores": [round(float(s), 5) for s in center_density_scores],
+                "dark_p20_scores": [round(float(s), 5) for s in dark_p20_scores],
                 "best_score": round(float(best_score), 5),
+                "best_center_density": round(float(best_center), 5),
+                "best_dark_p20": round(float(best_dark), 5),
                 "second_score": round(float(second_score), 5),
                 "margin": round(float(margin), 5),
                 "selected": int(selected),
                 "selected_label": choice_label(int(selected)),
                 "threshold": round(float(dynamic_mark), 5),
                 "soft_threshold": round(float(soft_threshold), 5),
+                "noise_center_gate": round(float(noise_center_gate), 5),
+                "noise_dark_gate": round(float(noise_dark_gate), 5),
+                "noise_gate_passed": bool(noise_gate_ok),
                 "uncertain": bool(selected < 0),
                 "double_mark": bool(is_double_mark and selected < 0),
                 "multi_mark_count": int(len(marked_indices)),
                 "resolved_by_highest": bool(resolved_by_highest),
                 "resolved_by_soft": bool(resolved_by_soft),
+                "noise_rejected": bool(noise_rejected),
+                "grid_search_used": bool(block_local_grid),
+                "local_x_shift_px": round(float(row_x_shift_used), 4),
+                "local_y_shift_px": round(float(row_y_shift_used), 4),
+                "block_anchor_shift_px": round(float(block_anchor_shifts[block_idx]), 4),
+                "candidate_quality": round(float(candidate_quality), 5),
                 "cell_boxes": cell_boxes,
+                "cell_centroids": [[round(float(pt[0]), 2), round(float(pt[1]), 2)] for pt in cell_centroids],
+                "selected_centroid": selected_centroid,
             }
         )
 
