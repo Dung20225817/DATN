@@ -1,9 +1,9 @@
 # app/db/ocr_tables.py
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
 from datetime import datetime
 
-from app.db_connect import Base
+from app.db.session import Base
 
 
 class OMRTest(Base):
@@ -47,20 +47,3 @@ class OMRAssignment(Base):
 
     def __repr__(self):
         return f"<OMRAssignment aid={self.aid} uuid={self.uuid} title={self.title}>"
-
-
-class OCRTest(Base):
-    """Luu dap an chu viet tay da duoc tai len."""
-
-    __tablename__ = "ocr_test"
-
-    ocrid = Column(Integer, primary_key=True, autoincrement=True)
-    uuid = Column(Integer, ForeignKey("users.uuid"), nullable=False)
-    ocr_name = Column(String, nullable=False)
-    ocr_answer = Column(Text, nullable=False)
-
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def __repr__(self):
-        return f"<OCRTest ocrid={self.ocrid} uuid={self.uuid} name={self.ocr_name}>"

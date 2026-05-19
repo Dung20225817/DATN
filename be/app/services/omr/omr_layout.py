@@ -84,20 +84,35 @@ def _pick_anchor_marker(markers, target_xy, img_w: int, img_h: int, max_norm_dis
     return float(best.get("cx", 0.0)), float(best.get("cy", 0.0))
 
 
-def _default_anchor_percent(rows_per_block: int):
-    mcq_top = 0.575
-    line_h = 0.0152
-    mcq_bottom = min(0.94, mcq_top + (max(2, int(rows_per_block)) - 1) * line_h)
+def _default_anchor_percent(rows_per_block: int, block_count_hint: int = 1):
+    rows = max(2, int(rows_per_block))
+    blocks = max(1, int(block_count_hint))
+    long_form_mode = bool(rows >= 25 or blocks >= 4)
+
+    if long_form_mode:
+        mcq_top = 0.30
+        line_h = 0.0220
+        mcq_left = 0.16
+        mcq_right = 0.94
+        mcq_bottom_cap = 0.96
+    else:
+        mcq_top = 0.575
+        line_h = 0.0152
+        mcq_left = 0.20
+        mcq_right = 0.77
+        mcq_bottom_cap = 0.94
+
+    mcq_bottom = min(mcq_bottom_cap, mcq_top + (rows - 1) * line_h)
 
     return {
         "sid_top": (0.57, 0.04),
         "sid_bottom": (0.57, 0.26),
         "code_top": (0.80, 0.04),
         "code_bottom": (0.80, 0.25),
-        "mcq_left_top": (0.20, mcq_top),
-        "mcq_left_bottom": (0.20, mcq_bottom),
-        "mcq_right_top": (0.77, mcq_top),
-        "mcq_right_bottom": (0.77, mcq_bottom),
+        "mcq_left_top": (mcq_left, mcq_top),
+        "mcq_left_bottom": (mcq_left, mcq_bottom),
+        "mcq_right_top": (mcq_right, mcq_top),
+        "mcq_right_bottom": (mcq_right, mcq_bottom),
     }
 
 
@@ -109,9 +124,12 @@ def _resolve_coordinate_anchors(
     sid_roi_cfg,
     code_roi_cfg,
     mcq_roi_cfg,
+    block_count_hint: Optional[int] = None,
 ):
     fallback_used = False
-    expected = _default_anchor_percent(rows_per_block)
+    block_hint = max(1, _safe_int(block_count_hint, 1))
+    long_form_mode = bool(int(rows_per_block) >= 25 or block_hint >= 4)
+    expected = _default_anchor_percent(rows_per_block, block_hint)
 
     if sid_roi_cfg is not None:
         expected["sid_top"] = (
@@ -201,7 +219,7 @@ def _resolve_coordinate_anchors(
         candidate_markers,
         min_x=float(img_w) * 0.12,
         max_x=float(img_w) * 0.90,
-        min_y=float(img_h) * 0.46,
+        min_y=float(img_h) * (0.30 if long_form_mode else 0.46),
         max_y=float(img_h) * 0.96,
         y_tol=6.0,
     )
@@ -226,10 +244,19 @@ def _resolve_coordinate_anchors(
             bottom_row = min(bottom_candidates, key=lambda row: abs(float(row.get("cy", 0.0)) - target_bottom))
 
     if top_row is not None and bottom_row is not None:
-        anchors["mcq_left_top"] = (float(top_row["x_min"]), float(top_row["cy"]))
-        anchors["mcq_right_top"] = (float(top_row["x_max"]), float(top_row["cy"]))
-        anchors["mcq_left_bottom"] = (float(bottom_row["x_min"]), float(bottom_row["cy"]))
-        anchors["mcq_right_bottom"] = (float(bottom_row["x_max"]), float(bottom_row["cy"]))
+        if long_form_mode:
+            # Long forms: marker rows are reliable for Y span, but X span can be compressed.
+            exp_left = float(expected["mcq_left_top"][0] * img_w)
+            exp_right = float(expected["mcq_right_top"][0] * img_w)
+            anchors["mcq_left_top"] = (exp_left, float(top_row["cy"]))
+            anchors["mcq_right_top"] = (exp_right, float(top_row["cy"]))
+            anchors["mcq_left_bottom"] = (exp_left, float(bottom_row["cy"]))
+            anchors["mcq_right_bottom"] = (exp_right, float(bottom_row["cy"]))
+        else:
+            anchors["mcq_left_top"] = (float(top_row["x_min"]), float(top_row["cy"]))
+            anchors["mcq_right_top"] = (float(top_row["x_max"]), float(top_row["cy"]))
+            anchors["mcq_left_bottom"] = (float(bottom_row["x_min"]), float(bottom_row["cy"]))
+            anchors["mcq_right_bottom"] = (float(bottom_row["x_max"]), float(bottom_row["cy"]))
     else:
         for name in ("mcq_left_top", "mcq_left_bottom", "mcq_right_top", "mcq_right_bottom"):
             target = expected[name]
@@ -251,16 +278,28 @@ def _build_rois_from_anchors(
     sid_roi_cfg,
     code_roi_cfg,
     mcq_roi_cfg,
+    block_count_hint: Optional[int] = None,
 ):
+    block_hint = max(1, _safe_int(block_count_hint, 1))
+    long_form_mode = bool(int(rows_per_block) >= 25 or block_hint >= 4)
+
     if sid_roi_cfg is None:
         sid_top = anchors["sid_top"]
         sid_bottom = anchors["sid_bottom"]
         sid_span = max(120.0, float(abs(sid_bottom[1] - sid_top[1])))
         sid_digit_diam = max(10.0, sid_span / 10.0)
-        sid_w = int(round(img_w * 0.20))
-        sid_h = int(round(max(220.0, sid_span - img_h * 0.020)))
-        sid_x = int(round(sid_top[0] + img_w * 0.004))
-        sid_y = int(round(min(sid_top[1], sid_bottom[1]) + img_h * 0.010))
+        if long_form_mode:
+            sid_w = int(round(img_w * 0.188))
+            sid_h = int(round(max(230.0, sid_span + img_h * 0.010)))
+            # The SID anchor marker is at the LEFT edge of the SID panel (not 20px to its left).
+            # Use a small inset (+0.7%) to place the ROI just inside the marker boundary.
+            sid_x = int(round(sid_top[0] + img_w * 0.007))
+            sid_y = int(round(min(sid_top[1], sid_bottom[1]) - img_h * 0.007))
+        else:
+            sid_w = int(round(img_w * 0.20))
+            sid_h = int(round(max(220.0, sid_span - img_h * 0.020)))
+            sid_x = int(round(sid_top[0] + img_w * 0.004))
+            sid_y = int(round(min(sid_top[1], sid_bottom[1]) + img_h * 0.010))
 
         sid_bottom_target = float(max(sid_top[1], sid_bottom[1]) + 0.50 * sid_digit_diam)
         sid_h = max(int(sid_h), int(round(sid_bottom_target - float(sid_y))))
@@ -325,39 +364,69 @@ def _build_rois_from_anchors(
         left_x = float(0.5 * (left_top[0] + left_bottom[0]))
         right_x = float(0.5 * (right_top[0] + right_bottom[0]))
 
-        default_left = float(img_w) * 0.18
-        default_right = float(img_w) * 0.80
-        default_top = float(img_h) * 0.57
-        default_bottom = min(
-            float(img_h) * 0.94,
-            default_top + (max(2, int(rows_per_block)) - 1) * (float(img_h) * 0.0152),
-        )
+        if long_form_mode:
+            default_left = float(img_w) * 0.16
+            default_right = float(img_w) * 0.94
+            default_top = float(img_h) * 0.30
+            default_line_h = float(img_h) * 0.0220
+            default_bottom = min(
+                float(img_h) * 0.96,
+                default_top + (max(2, int(rows_per_block)) - 1) * default_line_h,
+            )
+        else:
+            default_left = float(img_w) * 0.18
+            default_right = float(img_w) * 0.80
+            default_top = float(img_h) * 0.57
+            default_line_h = float(img_h) * 0.0152
+            default_bottom = min(
+                float(img_h) * 0.94,
+                default_top + (max(2, int(rows_per_block)) - 1) * default_line_h,
+            )
 
-        if not (float(img_w) * 0.12 <= left_x <= float(img_w) * 0.35):
+        if not (float(img_w) * 0.08 <= left_x <= float(img_w) * 0.35):
             left_x = default_left
-        if not (float(img_w) * 0.65 <= right_x <= float(img_w) * 0.90):
+        if long_form_mode:
+            if not (float(img_w) * 0.74 <= right_x <= float(img_w) * 0.97):
+                right_x = default_right
+        elif not (float(img_w) * 0.65 <= right_x <= float(img_w) * 0.90):
             right_x = default_right
-        if (right_x - left_x) < (float(img_w) * 0.45) or (right_x - left_x) > (float(img_w) * 0.72):
+        if long_form_mode:
+            if (right_x - left_x) < (float(img_w) * 0.62) or (right_x - left_x) > (float(img_w) * 0.88):
+                left_x = default_left
+                right_x = default_right
+        elif (right_x - left_x) < (float(img_w) * 0.45) or (right_x - left_x) > (float(img_w) * 0.72):
             left_x = default_left
             right_x = default_right
 
-        if not (float(img_h) * 0.55 <= top_y <= float(img_h) * 0.66):
+        if long_form_mode:
+            if not (float(img_h) * 0.24 <= top_y <= float(img_h) * 0.70):
+                top_y = default_top
+        elif not (float(img_h) * 0.55 <= top_y <= float(img_h) * 0.66):
             top_y = default_top
 
         expected_span = max(
             80.0,
-            (max(2, int(rows_per_block)) - 1) * (float(img_h) * 0.0152),
+            (max(2, int(rows_per_block)) - 1) * float(default_line_h),
         )
         measured_span = float(bottom_y - top_y)
-        if measured_span < (0.80 * expected_span) or measured_span > (1.10 * expected_span):
+        if long_form_mode:
+            if measured_span < (0.70 * expected_span) or measured_span > (1.25 * expected_span):
+                bottom_y = top_y + expected_span
+        elif measured_span < (0.80 * expected_span) or measured_span > (1.10 * expected_span):
             bottom_y = top_y + expected_span
 
-        if not ((top_y + float(img_h) * 0.12) <= bottom_y <= (float(img_h) * 0.96)):
+        if long_form_mode:
+            if not ((top_y + float(img_h) * 0.18) <= bottom_y <= (float(img_h) * 0.98)):
+                bottom_y = default_bottom
+        elif not ((top_y + float(img_h) * 0.12) <= bottom_y <= (float(img_h) * 0.96)):
             bottom_y = default_bottom
 
         span_y = max(12.0, float(bottom_y - top_y))
         line_h = span_y / max(1.0, float(max(2, int(rows_per_block)) - 1))
-        line_h = max(12.0, min(44.0, float(line_h)))
+        if long_form_mode:
+            line_h = max(12.0, min(60.0, float(line_h)))
+        else:
+            line_h = max(12.0, min(44.0, float(line_h)))
 
         mcq_x = int(round(left_x - 0.40 * line_h))
         mcq_w = int(round((right_x - left_x) + 0.80 * line_h))

@@ -15,10 +15,9 @@ import numpy as np
 
 from . import omr_marker_utils
 from .omr_handwriting import (
-    HANDWRITING_FIELDS,
     _build_handwriting_rois,
+    _extract_handwriting_crops,
     _parse_handwriting_config,
-    _run_handwriting_ocr,
 )
 from .omr_layout import _build_rois_from_anchors, _parse_roi_cfg, _resolve_coordinate_anchors
 from .omr_labels import choice_label
@@ -479,18 +478,12 @@ def process_omr_exam(
     profile_disable_mcq_rescue=False,
     profile_mcq_decode=None,
     profile_threshold_mode=None,
-    profile_ai_uncertainty=None,
-    profile_ai_sid_htr=None,
-    profile_agentic_rescue=None,
     profile_corner_markers=None,
     profile_scanner_hint=None,
     profile_page_size_pt=None,
     profile_handwriting_fields=None,
     _internal_retry=False,
 ):
-    del profile_ai_uncertainty
-    del profile_ai_sid_htr
-    del profile_agentic_rescue
     del profile_corner_markers
     del profile_scanner_hint
     del _internal_retry
@@ -561,17 +554,41 @@ def process_omr_exam(
             max_area_ratio=0.012,
             max_markers=320,
         )
-        mcq_geometry = _infer_mcq_geometry_from_markers(markers, WIDTH_IMG, HEIGHT_IMG)
+        mcq_geometry = _infer_mcq_geometry_from_markers(
+            markers,
+            WIDTH_IMG,
+            HEIGHT_IMG,
+            rows_per_block=rows_per_block,
+            block_count_hint=block_count,
+        )
 
         inferred_block_count = _safe_int(mcq_geometry.get("block_count"), 0)
         geom_bands = mcq_geometry.get("block_bands")
         if inferred_block_count <= 1 and isinstance(geom_bands, (list, tuple)):
             inferred_block_count = max(0, len(list(geom_bands)))
         if num_blocks is None and inferred_block_count >= 2:
-            if block_count <= 1 or questions <= rows_per_block or abs(inferred_block_count - block_count) <= 1:
+            # Accept fiducial inference if:
+            # 1. Difference is small (<=1), OR
+            # 2. Fiducial count is smaller (fewer blocks → more rows per block),
+            #    and dividing questions by inferred count gives integer rows_per_block,
+            #    e.g. 120q / 4 blocks = 30 rows (vs default 20 rows with 6 blocks inferred)
+            inferred_rows_per_block = int(math.ceil(float(questions) / float(inferred_block_count)))
+            current_inferred_rows = int(math.ceil(float(questions) / float(max(1, block_count))))
+            fid_count_trusted = (
+                block_count <= 1
+                or questions <= rows_per_block
+                or abs(inferred_block_count - block_count) <= 1
+                or (
+                    inferred_block_count < block_count
+                    and inferred_block_count >= 2
+                    and (questions % inferred_block_count == 0 or inferred_rows_per_block <= 40)
+                )
+            )
+            if fid_count_trusted:
                 block_count = int(inferred_block_count)
+                rows_per_block = inferred_rows_per_block
                 warning_codes.append("MCQ_BLOCKS_INFERRED")
-                warnings.append(f"Tu dong suy luan so khoi MCQ = {block_count} tu marker fiducial.")
+                warnings.append(f"Tu dong suy luan so khoi MCQ = {block_count} (rows_per_block={rows_per_block}) tu marker fiducial.")
 
         anchors, anchor_fallback_used = _resolve_coordinate_anchors(
             WIDTH_IMG,
@@ -581,6 +598,7 @@ def process_omr_exam(
             sid_roi_cfg,
             code_roi_cfg,
             mcq_roi_cfg,
+            block_count_hint=block_count,
         )
 
         if anchor_fallback_used:
@@ -595,11 +613,28 @@ def process_omr_exam(
             sid_roi_cfg,
             code_roi_cfg,
             mcq_roi_cfg,
+            block_count_hint=block_count,
         )
 
         sid_roi = roi_boxes["sid"]
         code_roi = roi_boxes["code"]
         mcq_roi = roi_boxes["mcq"]
+        long_form_mode = bool(rows_per_block >= 25 or block_count >= 4)
+
+        if long_form_mode and sid_roi_cfg is None:
+            # Long forms are more sensitive to SID bottom overflow; keep ROI slightly tighter.
+            # Only shrink if the ROI extends significantly beyond the bottom anchor marker.
+            # Use 1.5% shrink (instead of 3.5%) to avoid cutting off the last digit row when
+            # the ROI height is already tightly fit to the anchor span.
+            sid_shrink_px = int(round(float(sid_roi["h"]) * 0.015))
+            if sid_shrink_px >= 6:
+                tuned_h = int(max(120, int(sid_roi["h"]) - sid_shrink_px))
+                tuned_h = int(min(tuned_h, HEIGHT_IMG - int(sid_roi["y"])))
+                if tuned_h < int(sid_roi["h"]):
+                    sid_roi = dict(sid_roi)
+                    sid_roi["h"] = int(tuned_h)
+                    warning_codes.append("SID_LONG_FORM_HEIGHT_TUNED")
+                    warnings.append("Long-form: tinh chinh chieu cao ROI SID de giam anh huong chan nhieu.")
 
         mcq_block_bands: List[Tuple[float, float]] = []
         if isinstance(geom_bands, (list, tuple)):
@@ -615,6 +650,12 @@ def process_omr_exam(
             mcq_block_bands = sorted(mcq_block_bands, key=lambda band: float(band[0]))
         else:
             mcq_block_bands = []
+
+        if long_form_mode and mcq_block_bands:
+            # Long forms: marker bands are frequently left-edge anchors, not full bubble spans.
+            mcq_block_bands = []
+            warning_codes.append("MCQ_BLOCK_BANDS_DISABLED_LONG_FORM")
+            warnings.append("Long-form: bo qua block bands marker de tranh lech cot lua chon.")
 
         geom_top_center = _safe_float(mcq_geometry.get("top_center_y"), -1.0)
         geom_line_h = _safe_float(mcq_geometry.get("line_h"), -1.0)
@@ -661,7 +702,14 @@ def process_omr_exam(
                     mcq_geometry["top_center_y"] = float(refined_top)
                     mcq_geometry["bottom_center_y"] = float(refined_bottom)
                 if refined_line_h > 0.0:
-                    mcq_geometry["line_h"] = float(refined_line_h)
+                    roi_line_h_hint = float(mcq_roi["h"]) / max(2.0, float(rows_per_block))
+                    min_line_h = 0.60 * float(roi_line_h_hint)
+                    max_line_h = 1.35 * float(roi_line_h_hint)
+                    if min_line_h <= refined_line_h <= max_line_h:
+                        mcq_geometry["line_h"] = float(refined_line_h)
+                    else:
+                        warning_codes.append("MCQ_REFINE_LINEH_REJECTED")
+                        warnings.append("Bo qua line-height tu refine ROI MCQ do vuot nguong hop le.")
                 anchor_distance = float(refined_bottom - refined_top)
                 mcq_anchor_height_meta = {
                     "used": bool(anchor_distance > 0.0),
@@ -746,6 +794,8 @@ def process_omr_exam(
         use_alt = False
         if bool(sid_has_write_row):
             primary_all_zero = primary_value == ("0" * int(max(1, student_id_digits)))
+            digit_count = int(max(1, student_id_digits))
+            changed_digits = sum(1 for a, b in zip(primary_value, alt_value) if a != b) if (primary_ok and alt_ok) else 0
             if alt_ok and not primary_ok:
                 use_alt = True
             elif alt_ok and primary_ok and (alt_conf >= (primary_conf + 0.08)):
@@ -753,6 +803,16 @@ def process_omr_exam(
             elif alt_ok and primary_ok and primary_value.startswith("99") and not alt_value.startswith("99"):
                 use_alt = True
             elif alt_ok and primary_ok and shift_delta in (1, 9) and alt_conf >= (primary_conf - 0.15):
+                use_alt = True
+            elif (
+                alt_ok
+                and primary_ok
+                and shift_delta in (1, 9)
+                and changed_digits >= max(2, digit_count - 1)
+                and alt_conf >= (primary_conf - 0.35)
+            ):
+                # If all/most columns shift by exactly one row, prefer the alternate SID mode
+                # even when confidence is slightly lower.
                 use_alt = True
             elif alt_ok and primary_ok and primary_all_zero and primary_value != alt_value and shift_delta in (1, 9) and alt_conf >= 1.15:
                 use_alt = True
@@ -776,6 +836,41 @@ def process_omr_exam(
         )
 
         mcq_cfg = _parse_mcq_decode_config(profile_mcq_decode)
+        mcq_rescue_disabled = bool(profile_disable_mcq_rescue)
+        if long_form_mode:
+            profile_mcq_decode_raw = profile_mcq_decode if isinstance(profile_mcq_decode, dict) else {}
+            mcq_cfg = dict(mcq_cfg)
+            if not isinstance(profile_mcq_decode, dict):
+                mcq_cfg["min_mark_score"] = float(0.425)
+                mcq_cfg["min_mark_density"] = float(0.425)
+                mcq_cfg["adaptive_threshold"] = True
+                mcq_cfg["soft_mark_floor"] = float(0.30)
+                mcq_cfg["noise_center_floor"] = float(0.30)
+                mcq_cfg["noise_center_margin"] = float(0.08)
+                mcq_cfg["noise_dark_floor"] = float(0.18)
+                mcq_cfg["noise_dark_margin"] = float(0.03)
+                mcq_cfg["enable_soft_single_mark_rescue"] = True
+
+            # Long-form defaults: local row grid-search + thin-stroke suppression.
+            if "local_grid_search" not in profile_mcq_decode_raw:
+                mcq_cfg["local_grid_search"] = True
+            if "local_grid_shift_ratio" not in profile_mcq_decode_raw:
+                mcq_cfg["local_grid_shift_ratio"] = float(0.55)
+            if "local_grid_y_shift_ratio" not in profile_mcq_decode_raw:
+                mcq_cfg["local_grid_y_shift_ratio"] = float(0.12)
+            if "local_anchor_momentum" not in profile_mcq_decode_raw:
+                mcq_cfg["local_anchor_momentum"] = float(0.20)
+            if "thin_noise_erode_iter" not in profile_mcq_decode_raw:
+                mcq_cfg["thin_noise_erode_iter"] = int(1)
+            if "thin_noise_kernel" not in profile_mcq_decode_raw:
+                mcq_cfg["thin_noise_kernel"] = int(2)
+            if "thin_noise_min_component_ratio" not in profile_mcq_decode_raw:
+                mcq_cfg["thin_noise_min_component_ratio"] = float(0.012)
+
+            if not mcq_rescue_disabled:
+                mcq_rescue_disabled = True
+                warning_codes.append("MCQ_RESCUE_DISABLED_LONG_FORM")
+                warnings.append("Long-form: tam tat map-rescue de tranh lech top-shift o cac cau dau.")
         geom_top_center = _safe_float(mcq_geometry.get("top_center_y"), -1.0)
         geom_line_h = _safe_float(mcq_geometry.get("line_h"), -1.0)
 
@@ -803,6 +898,9 @@ def process_omr_exam(
 
         top_center_y = float(geom_top_center) if geom_top_center > 0.0 else float(anchor_top_y)
         fid_top_y = _safe_float(mcq_geometry.get("fid_top_y"), -1.0)
+        if long_form_mode and fid_top_y > 0.0:
+            # Long forms commonly expose a marker row above Q1. Start at least ~1 line below it.
+            top_center_y = max(float(top_center_y), float(fid_top_y + 0.95 * line_h))
         if fid_top_y > 0.0 and top_center_y > (fid_top_y + 1.8 * line_h):
             top_center_y = float(fid_top_y + line_h)
 
@@ -812,12 +910,43 @@ def process_omr_exam(
 
         geom_left_x = _safe_float(mcq_geometry.get("left_x"), -1.0)
         geom_right_x = _safe_float(mcq_geometry.get("right_x"), -1.0)
+        fid_left_x = _safe_float(mcq_geometry.get("fid_left_x"), -1.0)
+        fid_right_x = _safe_float(mcq_geometry.get("fid_right_x"), -1.0)
         if mcq_block_bands:
-            anchor_left_x = float(mcq_block_bands[0][0])
-            anchor_right_x = float(mcq_block_bands[min(len(mcq_block_bands), block_count) - 1][1])
+            band_left_x = float(mcq_block_bands[0][0])
+            band_right_x = float(mcq_block_bands[min(len(mcq_block_bands), block_count) - 1][1])
+            band_span_x = float(max(0.0, band_right_x - band_left_x))
+            min_band_cover = 0.78 if long_form_mode else 0.60
+            if band_span_x >= (min_band_cover * float(mcq_roi["w"])):
+                anchor_left_x = band_left_x
+                anchor_right_x = band_right_x
+            else:
+                warnings.append("Bo qua block bands do span qua hep so voi ROI MCQ hien tai.")
+                warning_codes.append("MCQ_BLOCK_BANDS_REJECTED")
+        elif long_form_mode:
+            roi_w = float(mcq_roi["w"])
+            x_left_candidates = []
+            x_right_candidates = []
+            if geom_right_x - geom_left_x >= roi_w * 0.45:
+                x_left_candidates.append(float(geom_left_x))
+                x_right_candidates.append(float(geom_right_x))
+            if fid_right_x - fid_left_x >= roi_w * 0.35:
+                x_left_candidates.append(float(fid_left_x))
+                x_right_candidates.append(float(fid_right_x))
+            if x_left_candidates and x_right_candidates:
+                anchor_left_x = float(min(x_left_candidates))
+                anchor_right_x = float(max(x_right_candidates))
+            else:
+                anchor_left_x = float(mcq_roi["x"] + 0.06 * roi_w)
+                anchor_right_x = float(mcq_roi["x"] + 0.94 * roi_w)
+                warning_codes.append("MCQ_LONG_FORM_X_FALLBACK")
+                warnings.append("Long-form: khong du local marker X hop le, fallback sang pham vi ROI rong theo tung block.")
         elif geom_right_x - geom_left_x >= float(mcq_roi["w"]) * 0.45:
             anchor_left_x = float(geom_left_x)
             anchor_right_x = float(geom_right_x)
+        elif fid_right_x - fid_left_x >= float(mcq_roi["w"]) * 0.45:
+            anchor_left_x = float(fid_left_x)
+            anchor_right_x = float(fid_right_x)
 
         anchor_left_x = max(float(mcq_roi["x"]), float(anchor_left_x))
         anchor_right_x = min(float(mcq_roi["x"] + mcq_roi["w"]), float(anchor_right_x))
@@ -852,8 +981,8 @@ def process_omr_exam(
         # If marker-anchored ROI is still highly uncertain, search nearby map parameters.
         # This keeps ownership in MCQ module while avoiding hardcoded service-side ROI rewrites.
         initial_uncertain = int(len(list(mcq_result.get("uncertain_questions") or [])))
-        search_uncertain_gate = max(12, int(round(0.60 * float(max(1, questions)))))
-        if (not bool(profile_disable_mcq_rescue)) and initial_uncertain >= search_uncertain_gate:
+        search_uncertain_gate = max(4, int(round(0.60 * float(max(1, questions)))))
+        if (not mcq_rescue_disabled) and initial_uncertain >= search_uncertain_gate:
             mcq_map_search_meta = {
                 "used": False,
                 "reason": "no-better-candidate",
@@ -966,10 +1095,11 @@ def process_omr_exam(
                     "initial_double_mark": int(baseline_rank[1]),
                     "final_double_mark": int(best_rank[1]),
                 }
-        elif bool(profile_disable_mcq_rescue):
+        elif mcq_rescue_disabled:
+            rescue_reason = "disabled-by-profile" if bool(profile_disable_mcq_rescue) else "disabled-by-long-form"
             mcq_map_search_meta = {
                 "used": False,
-                "reason": "disabled-by-profile",
+                "reason": rescue_reason,
                 "initial_uncertain": int(initial_uncertain),
             }
         else:
@@ -986,7 +1116,7 @@ def process_omr_exam(
 
         if drift_suspected:
             warning_codes.append("MCQ_COORD_DRIFT")
-            if not bool(profile_disable_mcq_rescue):
+            if not mcq_rescue_disabled:
                 expand_lines = 4
                 expand_px = int(round(float(expand_lines) * float(line_h)))
                 retry_roi = dict(mcq_roi)
@@ -1028,7 +1158,7 @@ def process_omr_exam(
                 else:
                     warnings.append("Phat hien drift roi MCQ nhung thu nghiem mo rong len khong tot hon decode hien tai.")
             else:
-                warnings.append("Phat hien drift roi MCQ nhung profile da khoa rescue tu dong.")
+                warnings.append("Phat hien drift roi MCQ nhung rescue tu dong dang bi khoa.")
 
         user_answers = list(mcq_result.get("user_answers") or [])
         if len(user_answers) < questions:
@@ -1101,7 +1231,7 @@ def process_omr_exam(
         mcq_crop_name = f"omr_mcq_{run_tag}.jpg"
         bubble_name = f"bubble_confidence_{run_tag}.json"
 
-        handwriting_payload = _run_handwriting_ocr(
+        handwriting_payload = _extract_handwriting_crops(
             img_std,
             handwriting_rois,
             output_folder=output_folder,
@@ -1133,6 +1263,7 @@ def process_omr_exam(
             code_result.get("value") or "",
             score,
             graded_questions,
+            handwriting_rois,
         )
 
         result_path = os.path.join(output_folder, result_name)
@@ -1177,7 +1308,7 @@ def process_omr_exam(
             },
             "handwriting": {
                 "enabled": bool(handwriting_payload.get("enabled", False)),
-                "ocr_engine": str(handwriting_payload.get("ocr_engine") or "vietocr_transformer"),
+                "ocr_engine": str(handwriting_payload.get("ocr_engine") or "disabled"),
                 "field_rois": handwriting_rois,
                 "values": handwriting_payload.get("values") or {},
                 "fields": handwriting_payload.get("fields") or {},
@@ -1272,7 +1403,7 @@ def process_omr_exam(
             "handwriting_fields": handwriting_payload.get("values") or {},
             "handwriting": {
                 "enabled": bool(handwriting_payload.get("enabled", False)),
-                "ocr_engine": str(handwriting_payload.get("ocr_engine") or "vietocr_transformer"),
+                "ocr_engine": str(handwriting_payload.get("ocr_engine") or "disabled"),
                 "gpu": bool(handwriting_payload.get("gpu", False)),
                 "save_crops": bool(handwriting_payload.get("save_crops", True)),
                 "field_rois": handwriting_rois,
@@ -1286,7 +1417,7 @@ def process_omr_exam(
                 "marker_count": int(len(markers)),
                 "sid_decode_mode": sid_decode_mode,
                 "handwriting_enabled": bool(handwriting_payload.get("enabled", False)),
-                "handwriting_ocr_engine": str(handwriting_payload.get("ocr_engine") or "vietocr_transformer"),
+                "handwriting_ocr_engine": str(handwriting_payload.get("ocr_engine") or "disabled"),
                 "coordinate_mapping_global_warp": bool(global_warp_used),
                 "coordinate_mapping_anchor_fallback": bool(anchor_fallback_used),
                 "coordinate_mapping_mcq_map_used": True,

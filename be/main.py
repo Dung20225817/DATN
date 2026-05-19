@@ -5,15 +5,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-import os
 import logging
 
-from app.logging_config import setup_logging, get_logger
+from app.core.paths import UPLOADS_DIR, ensure_runtime_dirs
+from app.core.logging import setup_logging, get_logger
 from app.api import auth
-from app.api.handwritten_load_picture import router as handwritten_router
-from app.api.omr_grading import router as omr_router
-from app.db_connect import engine, Base
-from app.db import table, ocr_tables  # noqa: F401 - import to register models
+from app.api.omr import router as omr_router
+from app.db.session import engine, Base
+from app.db.models import user, omr  # noqa: F401 - import to register models
 
 # Setup logging
 setup_logging(level=logging.INFO)
@@ -34,22 +33,19 @@ logger.info("Database tables initialized")
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="OCR Grading API",
-    description="Vietnamese handwritten essay and OMR grading system",
+    title="OMR Grading API",
+    description="Vietnamese OMR grading system",
     version="1.0",
     default_response_class=UnicodeJSONResponse
 )
 
-# Create upload directories
-os.makedirs("uploads/omr", exist_ok=True)
-os.makedirs("uploads/answer_keys", exist_ok=True)
-os.makedirs("uploads/handwritten", exist_ok=True)
-os.makedirs("uploads/temp", exist_ok=True)
+# Create runtime directories
+ensure_runtime_dirs()
 
 logger.info("Upload directories initialized")
 
 # Mount static files for image serving
-app.mount("/static", StaticFiles(directory="uploads"), name="static")
+app.mount("/static", StaticFiles(directory=str(UPLOADS_DIR)), name="static")
 
 # Configure CORS middleware - Allow localhost on all ports for development
 app.add_middleware(
@@ -63,7 +59,6 @@ app.add_middleware(
 # Register API routers
 logger.info("Registering API routers...")
 app.include_router(auth.router, prefix="/api", tags=["auth"])
-app.include_router(handwritten_router, prefix="/api/handwritten", tags=["handwritten"])
 app.include_router(omr_router, prefix="/api/omr", tags=["omr"])
 
 logger.info("All routers registered successfully")
@@ -72,11 +67,10 @@ logger.info("All routers registered successfully")
 @app.get("/")
 def root():
     return {
-        "message": "OCR Grading API is running",
+        "message": "OMR Grading API is running",
         "version": "1.0",
         "endpoints": {
             "auth": "/api/login",
-            "handwritten": "/api/handwritten",
             "omr": "/api/omr",
         }
     }

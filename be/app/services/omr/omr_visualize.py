@@ -20,6 +20,7 @@ def _draw_result_overlay(
     exam_code,
     score,
     graded_questions,
+    handwriting_rois=None,
 ):
     canvas = img_bgr.copy()
 
@@ -45,6 +46,39 @@ def _draw_result_overlay(
         2,
     )
 
+    if isinstance(handwriting_rois, dict):
+        for field_name, roi in handwriting_rois.items():
+            if not isinstance(roi, dict):
+                continue
+            x = int(_safe_float(roi.get("x"), -1))
+            y = int(_safe_float(roi.get("y"), -1))
+            w = int(_safe_float(roi.get("w"), 0))
+            h = int(_safe_float(roi.get("h"), 0))
+            if w <= 0 or h <= 0:
+                continue
+
+            cv2.rectangle(
+                canvas,
+                (x, y),
+                (x + w, y + h),
+                (255, 90, 255),
+                2,
+            )
+
+            label = str(field_name or "").replace("_", " ").upper()
+            if label:
+                y_label = max(14, y - 6)
+                cv2.putText(
+                    canvas,
+                    label,
+                    (x + 2, y_label),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (255, 90, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
+
     for row in list(mcq_rows or []):
         selected = int(row.get("selected", -1))
         if bool(row.get("uncertain", False)):
@@ -59,6 +93,15 @@ def _draw_result_overlay(
         x1, y1, x2, y2 = [int(v) for v in box]
         cx = int(round(0.5 * (x1 + x2)))
         cy = int(round(0.5 * (y1 + y2)))
+
+        sel_centroid = row.get("selected_centroid")
+        if isinstance(sel_centroid, (list, tuple)) and len(sel_centroid) == 2:
+            sx = int(round(_safe_float(sel_centroid[0], float(cx))))
+            sy = int(round(_safe_float(sel_centroid[1], float(cy))))
+            if x1 <= sx <= x2 and y1 <= sy <= y2:
+                cx = int(sx)
+                cy = int(sy)
+
         rad = int(max(4, min(18, 0.4 * min(abs(x2 - x1), abs(y2 - y1)))))
         cv2.circle(canvas, (cx, cy), rad, (0, 255, 0), 2)
 
