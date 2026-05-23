@@ -1,469 +1,69 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { API_CONFIG } from "../config/api";
-import ViewImageModal from "../UI_Components/ViewImageModal";
-import "../UI_Components/OmrMobileApp.css";
-
-type NavTab = "home" | "tests" | "templates";
-type DetailTab = "grading" | "answers" | "stats" | "export";
-type ScannerUiState = "idle" | "searching" | "locked";
-type PickedImageSource = "camera" | "library" | "mixed" | null;
-
-type FormProfile = {
-  code: string;
-  title: string;
-  sample_file: string;
-  default_questions: number;
-  total_points: number;
-  num_choices: number;
-  rows_per_block: number;
-  num_blocks?: number | null;
-  exam_code_digits?: number;
-  student_id_digits: number;
-  sid_has_write_row: boolean;
-  strategy?: ScannerStrategy;
-};
-
-type CornerKey = "tl" | "tr" | "bl" | "br";
-
-type MarkerBox = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  cx?: number;
-  cy?: number;
-};
-
-type ScannerHint = {
-  min_dark_ratio?: number;
-  min_center_luma?: number;
-  min_marker_contrast?: number;
-  sample_size_norm?: number;
-};
-
-type ScannerStrategy = {
-  sheet_aspect_ratio?: number;
-  corner_markers?: Partial<Record<CornerKey, MarkerBox>>;
-  scanner_hint?: ScannerHint;
-};
-
-type MarkerSample = {
-  x: number;
-  y: number;
-  sampleSize: number;
-};
-
-type AnswerSet = {
-  code: string;
-  answers: string[];
-};
-
-type AnswerCompareItem = {
-  question?: number;
-  selected_label?: string;
-  correct_label?: string;
-  status?: string;
-  is_correct?: boolean;
-};
-
-type OMRResult = {
-  score?: number;
-  graded_questions?: number;
-  uncertain_count?: number;
-  answer_compare?: AnswerCompareItem[];
-  student_id?: string;
-  exam_code?: string;
-  image_url?: string | null;
-  sid_crop_url?: string | null;
-  mcq_crop_url?: string | null;
-  bubble_confidence_json_url?: string | null;
-  result_image?: string;
-  sid_crop_image?: string;
-  mcq_crop_image?: string;
-  bubble_confidence_json?: string;
-  [key: string]: unknown;
-};
-
-type BatchGradeResultItem = {
-  file_name?: string;
-  success?: boolean;
-  data?: OMRResult;
-  image_url?: string | null;
-  sid_crop_url?: string | null;
-  mcq_crop_url?: string | null;
-  bubble_confidence_json_url?: string | null;
-};
-
-type GradeRecord = {
-  id: string;
-  graded_at: string;
-  source: "single" | "batch";
-  file_name: string;
-  image_url?: string | null;
-  sid_crop_url?: string | null;
-  mcq_crop_url?: string | null;
-  bubble_confidence_json_url?: string | null;
-  data: OMRResult;
-};
-
-type LastResultPayload = OMRResult & {
-  grade_records?: GradeRecord[];
-  __meta__?: {
-    form_profile_code?: string;
-    [key: string]: unknown;
-  };
-};
-
-type TestCardItem = {
-  id: number;
-  title: string;
-  createdAt: string;
-  createdAtRaw?: string;
-  questionCount: number;
-  totalPoints: number;
-  formProfileCode: string | null;
-  gradedCount: number;
-  answerSets: AnswerSet[];
-  activeCode: string | null;
-  lastResult?: LastResultPayload | null;
-};
-
-type AssignmentApiItem = {
-  aid: number;
-  title: string;
-  created_at_raw?: string | null;
-  created_at_label?: string | null;
-  question_count: number;
-  total_points: number;
-  form_profile_code?: string | null;
-  graded_count: number;
-  answer_sets: AnswerSet[];
-  active_code?: string | null;
-  last_result?: LastResultPayload | null;
-};
-
-const OPTION_LABELS = ["A", "B", "C", "D"];
-const CORNER_KEYS: CornerKey[] = ["tl", "tr", "bl", "br"];
-const MAX_GRADE_RECORDS = 200;
-const AUTO_CAPTURE_COOLDOWN_MS = 1300;
-
-const FALLBACK_MARKER_SAMPLES: Record<CornerKey, MarkerSample> = {
-  tl: { x: 0.08, y: 0.08, sampleSize: 0.062 },
-  tr: { x: 0.92, y: 0.08, sampleSize: 0.062 },
-  bl: { x: 0.08, y: 0.92, sampleSize: 0.062 },
-  br: { x: 0.92, y: 0.92, sampleSize: 0.062 },
-};
-
-const clampNumber = (value: number, min: number, max: number) => {
-  if (!Number.isFinite(value)) return min;
-  return Math.max(min, Math.min(max, value));
-};
-
-function mapClientPointToVideo(
-  clientX: number,
-  clientY: number,
-  videoEl: HTMLVideoElement,
-  videoRect: DOMRect
-) {
-  const sourceW = videoEl.videoWidth;
-  const sourceH = videoEl.videoHeight;
-  const drawScale = Math.max(videoRect.width / sourceW, videoRect.height / sourceH);
-  const drawW = sourceW * drawScale;
-  const drawH = sourceH * drawScale;
-  const offsetX = (videoRect.width - drawW) / 2;
-  const offsetY = (videoRect.height - drawH) / 2;
-
-  const xInVideo = (clientX - videoRect.left - offsetX) / drawScale;
-  const yInVideo = (clientY - videoRect.top - offsetY) / drawScale;
-
-  return {
-    x: Math.max(0, Math.min(sourceW - 1, xInVideo)),
-    y: Math.max(0, Math.min(sourceH - 1, yInVideo)),
-  };
-}
-
-function darkRatioInArea(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number,
-  darkLumaThreshold: number
-) {
-  const sx = Math.max(0, Math.floor(x - size / 2));
-  const sy = Math.max(0, Math.floor(y - size / 2));
-  const sw = Math.max(1, Math.floor(size));
-  const sh = Math.max(1, Math.floor(size));
-  const { data } = ctx.getImageData(sx, sy, sw, sh);
-  let dark = 0;
-  let total = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    if (lum < darkLumaThreshold) dark += 1;
-    total += 1;
-  }
-  return total ? dark / total : 0;
-}
-
-function avgLumaInArea(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number
-) {
-  const sx = Math.max(0, Math.floor(x));
-  const sy = Math.max(0, Math.floor(y));
-  const sw = Math.max(1, Math.floor(w));
-  const sh = Math.max(1, Math.floor(h));
-  const { data } = ctx.getImageData(sx, sy, sw, sh);
-  let sum = 0;
-  let count = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    count += 1;
-  }
-  return count ? sum / count : 0;
-}
-
-const nowDateTimeLocal = () => {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
-};
-
-const formatDateTimeLabel = (value: string) => {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-};
-
-const toAnswerString = (answers: string[]) => {
-  const oneBased = answers.map((x) => {
-    const idx = OPTION_LABELS.indexOf(x);
-    return idx >= 0 ? String(idx + 1) : "";
-  });
-  return oneBased.join(",");
-};
-
-const toAbsoluteStaticUrl = (url: string | null | undefined) => {
-  if (!url) return null;
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${API_CONFIG.BASE_URL}${url}`;
-};
-
-const toStaticOmrUrlFromFileName = (fileName: unknown) => {
-  if (typeof fileName !== "string") return null;
-  const safeName = fileName.trim();
-  if (!safeName) return null;
-  return toAbsoluteStaticUrl(`/static/omr/${encodeURIComponent(safeName)}`);
-};
-
-const createRecordId = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-};
-
-const normalizeRecordUrls = (record: GradeRecord): GradeRecord => {
-  const dataPayload = (record.data && typeof record.data === "object") ? record.data : {};
-  const fallbackImage = toStaticOmrUrlFromFileName((dataPayload as OMRResult).result_image);
-  const fallbackSid = toStaticOmrUrlFromFileName((dataPayload as OMRResult).sid_crop_image);
-  const fallbackMcq = toStaticOmrUrlFromFileName((dataPayload as OMRResult).mcq_crop_image);
-  const fallbackTelemetry = toStaticOmrUrlFromFileName((dataPayload as OMRResult).bubble_confidence_json);
-
-  return {
-    ...record,
-    image_url: toAbsoluteStaticUrl(record.image_url) || fallbackImage,
-    sid_crop_url: toAbsoluteStaticUrl(record.sid_crop_url) || fallbackSid,
-    mcq_crop_url: toAbsoluteStaticUrl(record.mcq_crop_url) || fallbackMcq,
-    bubble_confidence_json_url:
-      toAbsoluteStaticUrl(record.bubble_confidence_json_url)
-      || toAbsoluteStaticUrl((dataPayload as OMRResult).bubble_confidence_json_url)
-      || fallbackTelemetry,
-  };
-};
-
-const buildLegacyRecordFromLastResult = (
-  lastResult: LastResultPayload | OMRResult | null | undefined
-): GradeRecord | null => {
-  if (!lastResult || typeof lastResult !== "object") return null;
-
-  const payload = lastResult as OMRResult;
-  const imageUrl = toAbsoluteStaticUrl(payload.image_url) || toStaticOmrUrlFromFileName(payload.result_image);
-  const sidCropUrl = toAbsoluteStaticUrl(payload.sid_crop_url) || toStaticOmrUrlFromFileName(payload.sid_crop_image);
-  const mcqCropUrl = toAbsoluteStaticUrl(payload.mcq_crop_url) || toStaticOmrUrlFromFileName(payload.mcq_crop_image);
-  const bubbleConfidenceJsonUrl =
-    toAbsoluteStaticUrl(payload.bubble_confidence_json_url)
-    || toStaticOmrUrlFromFileName(payload.bubble_confidence_json);
-
-  if (!imageUrl && !sidCropUrl && !mcqCropUrl && !bubbleConfidenceJsonUrl) {
-    return null;
-  }
-
-  const seed = String(
-    payload.result_image
-    || payload.sid_crop_image
-    || payload.mcq_crop_image
-    || payload.exam_code
-    || payload.student_id
-    || "legacy"
-  );
-
-  return {
-    id: `legacy_${seed}`,
-    graded_at: "1970-01-01T00:00:00.000Z",
-    source: "single",
-    file_name: String(payload.result_image || payload.sid_crop_image || payload.mcq_crop_image || "legacy_result"),
-    image_url: imageUrl,
-    sid_crop_url: sidCropUrl,
-    mcq_crop_url: mcqCropUrl,
-    bubble_confidence_json_url: bubbleConfidenceJsonUrl,
-    data: payload,
-  };
-};
-
-const getGradeRecordsFromLastResult = (lastResult: LastResultPayload | OMRResult | null | undefined): GradeRecord[] => {
-  const records = (lastResult as LastResultPayload | null | undefined)?.grade_records;
-  if (Array.isArray(records)) {
-    const normalized = records.filter((item): item is GradeRecord => {
-      return (
-        !!item
-        && typeof item === "object"
-        && typeof item.id === "string"
-        && typeof item.graded_at === "string"
-        && typeof item.file_name === "string"
-        && !!item.data
-        && typeof item.data === "object"
-      );
-    }).map(normalizeRecordUrls);
-
-    if (normalized.length > 0) {
-      return normalized;
-    }
-  }
-
-  const legacyRecord = buildLegacyRecordFromLastResult(lastResult);
-  return legacyRecord ? [legacyRecord] : [];
-};
-
-const buildGradeRecord = ({
-  source,
-  fileName,
-  imageUrl,
-  sidCropUrl,
-  mcqCropUrl,
-  bubbleConfidenceJsonUrl,
-  data,
-}: {
-  source: "single" | "batch";
-  fileName: string;
-  imageUrl?: string | null;
-  sidCropUrl?: string | null;
-  mcqCropUrl?: string | null;
-  bubbleConfidenceJsonUrl?: string | null;
-  data: OMRResult;
-}): GradeRecord => {
-  return {
-    id: createRecordId(),
-    graded_at: new Date().toISOString(),
-    source,
-    file_name: String(fileName || "omr_submission.jpg"),
-    image_url: imageUrl ?? null,
-    sid_crop_url: sidCropUrl ?? null,
-    mcq_crop_url: mcqCropUrl ?? null,
-    bubble_confidence_json_url: bubbleConfidenceJsonUrl ?? null,
-    data,
-  };
-};
-
-const mergeLastResultWithRecords = (
-  previous: LastResultPayload | OMRResult | null | undefined,
-  latestData: OMRResult,
-  newRecords: GradeRecord[]
-): LastResultPayload => {
-  const base = (previous && typeof previous === "object") ? (previous as LastResultPayload) : {};
-  const previousRecords = getGradeRecordsFromLastResult(previous);
-  return {
-    ...base,
-    ...latestData,
-    grade_records: [...newRecords, ...previousRecords].slice(0, MAX_GRADE_RECORDS),
-  };
-};
-
-const rebuildLastResultFromRecords = (
-  previous: LastResultPayload | OMRResult | null | undefined,
-  records: GradeRecord[]
-): LastResultPayload => {
-  const base = (previous && typeof previous === "object") ? (previous as LastResultPayload) : {};
-  const safeRecords = records.slice(0, MAX_GRADE_RECORDS);
-
-  if (safeRecords.length <= 0) {
-    return {
-      __meta__: base.__meta__,
-      grade_records: [],
-    };
-  }
-
-  return {
-    ...base,
-    ...safeRecords[0].data,
-    grade_records: safeRecords,
-  };
-};
-
-const getCompareStatus = (item: AnswerCompareItem | null | undefined) => String(item?.status || "").trim().toLowerCase();
-
-const isScoredCompareStatus = (status: string) => status !== "blank-no-key" && status !== "no-key";
-
-const countUncertainWithKey = (result: OMRResult | null | undefined) => {
-  const compare = Array.isArray(result?.answer_compare) ? result.answer_compare : [];
-  const fromCompare = compare.filter((x) => getCompareStatus(x) === "uncertain").length;
-  if (fromCompare > 0 || compare.length > 0) {
-    return fromCompare;
-  }
-  return Number(result?.uncertain_count || 0);
-};
-
-function toCsv(result: OMRResult | null | undefined): string {
-  const rows = [["Cau", "Da_chon", "Dung", "Trang_thai", "Dung/Sai"]];
-  const compare = Array.isArray(result?.answer_compare) ? result.answer_compare : [];
-  compare.forEach((it: AnswerCompareItem) => {
-    rows.push([
-      String(it.question ?? ""),
-      String(it.selected_label ?? ""),
-      String(it.correct_label ?? ""),
-      String(it.status ?? ""),
-      it.is_correct ? "1" : "0",
-    ]);
-  });
-  return rows.map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(",")).join("\n");
-}
-
-function downloadTextFile(fileName: string, content: string, mime = "text/plain;charset=utf-8") {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
+import { useNavigate, useParams } from "react-router-dom";
+import { API_CONFIG } from "../../../config/api";
+import ViewImageModal from "../../../components/ViewImageModal";
+import ExportPanel from "../components/ExportPanel";
+import StatsPanel from "../components/StatsPanel";
+import "../styles/OmrMobileApp.css";
+import {
+  AUTO_CAPTURE_COOLDOWN_MS,
+  CORNER_KEYS,
+  FALLBACK_MARKER_SAMPLES,
+  OPTION_LABELS,
+} from "../types";
+import type {
+  AnswerSet,
+  AssignmentApiItem,
+  BatchGradeResultItem,
+  CornerKey,
+  DetailTab,
+  FormProfile,
+  MarkerSample,
+  NavTab,
+  OMRResult,
+  PickedImageSource,
+  ScannerUiState,
+  TestCardItem,
+} from "../types";
+import {
+  avgLumaInArea,
+  buildGradeRecord,
+  clampNumber,
+  darkRatioInArea,
+  formatDateTimeLabel,
+  getGradeRecordsFromLastResult,
+  getHandwritingOverlayRois,
+  mapClientPointToVideo,
+  mergeLastResultWithRecords,
+  nowDateTimeLocal,
+  rebuildLastResultFromRecords,
+  toAbsoluteStaticUrl,
+  toAnswerString,
+  toStaticOmrUrlFromFileName,
+} from "../utils";
 
 export default function MultichoicePage() {
   const navigate = useNavigate();
+  const { testId: routeTestIdRaw, recordId: routeRecordIdRaw } = useParams();
   const uid = Number(localStorage.getItem("uid") || "0");
+
+  const routeTestId = useMemo(() => {
+    if (!routeTestIdRaw) return null;
+    const parsed = Number(routeTestIdRaw);
+    if (!Number.isInteger(parsed) || parsed <= 0) return null;
+    return parsed;
+  }, [routeTestIdRaw]);
+
+  const routeRecordId = useMemo(() => {
+    if (!routeRecordIdRaw) return null;
+    try {
+      return decodeURIComponent(routeRecordIdRaw);
+    } catch {
+      return routeRecordIdRaw;
+    }
+  }, [routeRecordIdRaw]);
+
+  const isRecordDetailPage = routeTestId !== null;
 
   const [navTab, setNavTab] = useState<NavTab>("home");
   const [detailTestId, setDetailTestId] = useState<number | null>(null);
@@ -479,6 +79,8 @@ export default function MultichoicePage() {
   const [newCreatedAt, setNewCreatedAt] = useState(nowDateTimeLocal());
 
   const [newCode, setNewCode] = useState("");
+  const [statsFilterMode, setStatsFilterMode] = useState<"exam_code" | "student_id">("exam_code");
+  const [statsFilterValue, setStatsFilterValue] = useState("");
 
   const [pickedFiles, setPickedFiles] = useState<File[]>([]);
   const [pickedPreviews, setPickedPreviews] = useState<string[]>([]);
@@ -509,10 +111,12 @@ export default function MultichoicePage() {
   const [cameraError, setCameraError] = useState("");
   const [scannerState, setScannerState] = useState<ScannerUiState>("idle");
 
-  const selectedTest = useMemo(
-    () => tests.find((x) => x.id === detailTestId) || null,
-    [tests, detailTestId]
-  );
+  const selectedTest = useMemo(() => {
+    if (routeTestId !== null) {
+      return tests.find((x) => x.id === routeTestId) || null;
+    }
+    return tests.find((x) => x.id === detailTestId) || null;
+  }, [tests, detailTestId, routeTestId]);
 
   const selectedNewProfile = useMemo(
     () => formProfiles.find((p) => p.code === newFormProfileCode) || null,
@@ -570,7 +174,7 @@ export default function MultichoicePage() {
     return next;
   }, [selectedTestProfile, scannerHint.sampleSizeNorm]);
 
-  const showDetail = !!selectedTest;
+  const showDetail = !isRecordDetailPage && !!selectedTest;
 
   const selectedAnswerSet = useMemo(() => {
     if (!selectedTest || !selectedTest.activeCode) return null;
@@ -587,47 +191,28 @@ export default function MultichoicePage() {
     [selectedTest?.lastResult]
   );
 
+  const normalizedStatsFilterValue = useMemo(() => statsFilterValue.trim().toLowerCase(), [statsFilterValue]);
+
+  const filteredGradeRecords = useMemo(() => {
+    if (!normalizedStatsFilterValue) return gradeRecords;
+
+    return gradeRecords.filter((record) => {
+      const candidate = statsFilterMode === "exam_code"
+        ? String(record.data?.exam_code ?? "")
+        : String(record.data?.student_id ?? "");
+      return candidate.toLowerCase().includes(normalizedStatsFilterValue);
+    });
+  }, [gradeRecords, normalizedStatsFilterValue, statsFilterMode]);
+
   const selectedGradeRecord = useMemo(() => {
     if (!gradeRecords.length) return null;
     if (!selectedGradeRecordId) return gradeRecords[0];
     return gradeRecords.find((record) => record.id === selectedGradeRecordId) || gradeRecords[0];
   }, [gradeRecords, selectedGradeRecordId]);
 
-  const statsResult = selectedGradeRecord?.data || selectedTest?.lastResult || null;
-  const selectedTelemetryJsonUrl = useMemo(() => {
-    if (!selectedGradeRecord) return null;
-    return (
-      toAbsoluteStaticUrl(selectedGradeRecord.bubble_confidence_json_url)
-      || toAbsoluteStaticUrl(selectedGradeRecord.data?.bubble_confidence_json_url)
-      || toStaticOmrUrlFromFileName(selectedGradeRecord.data?.bubble_confidence_json)
-    );
+  const handwritingOverlayRois = useMemo(() => {
+    return getHandwritingOverlayRois(selectedGradeRecord?.data || null);
   }, [selectedGradeRecord]);
-
-  const statData = useMemo(() => {
-    const compare = Array.isArray(statsResult?.answer_compare)
-      ? statsResult?.answer_compare
-      : [];
-    const scoredCompare = compare.filter((x: AnswerCompareItem) => {
-      const status = getCompareStatus(x);
-      return isScoredCompareStatus(status);
-    });
-
-    const total = Math.max(0, Number(statsResult?.graded_questions ?? scoredCompare.length));
-    const correct = scoredCompare.filter((x: AnswerCompareItem) => getCompareStatus(x) === "correct" || !!x.is_correct).length;
-    const uncertain = countUncertainWithKey(statsResult || null);
-    const wrong = Math.max(0, total - correct - uncertain);
-    return { total, correct, wrong, uncertain };
-  }, [statsResult]);
-
-  const pieStyle = useMemo(() => {
-    const total = Math.max(1, statData.total);
-    const c = Math.round((statData.correct / total) * 100);
-    const u = Math.round((statData.uncertain / total) * 100);
-    const w = Math.max(0, 100 - c - u);
-    return {
-      background: `conic-gradient(#2e7d32 0 ${c}%, #f9a825 ${c}% ${c + u}%, #d32f2f ${c + u}% ${c + u + w}%)`,
-    } as const;
-  }, [statData]);
 
   const gradeBlockReason = useMemo(() => {
     if (!selectedTest) return "Chưa chọn bài kiểm tra.";
@@ -722,16 +307,31 @@ export default function MultichoicePage() {
   }, [successMessage]);
 
   useEffect(() => {
+    setStatsFilterMode("exam_code");
+    setStatsFilterValue("");
+  }, [selectedTest?.id]);
+
+  useEffect(() => {
     if (gradeRecords.length === 0) {
       if (selectedGradeRecordId) {
         setSelectedGradeRecordId(null);
       }
       return;
     }
+
+    if (isRecordDetailPage && routeRecordId) {
+      if (gradeRecords.some((record) => record.id === routeRecordId)) {
+        if (selectedGradeRecordId !== routeRecordId) {
+          setSelectedGradeRecordId(routeRecordId);
+        }
+        return;
+      }
+    }
+
     if (!selectedGradeRecordId || !gradeRecords.some((record) => record.id === selectedGradeRecordId)) {
       setSelectedGradeRecordId(gradeRecords[0].id);
     }
-  }, [gradeRecords, selectedGradeRecordId]);
+  }, [gradeRecords, selectedGradeRecordId, isRecordDetailPage, routeRecordId]);
 
   useEffect(() => {
     if (!showDetail || detailTab !== "grading") {
@@ -902,6 +502,63 @@ export default function MultichoicePage() {
     });
     setPickedFiles([]);
     setPickedSource(null);
+  }
+
+  function openTestForGrading(testId: number) {
+    setDetailTestId(testId);
+    setDetailTab("grading");
+    setNavTab("home");
+    setErrorMessage("");
+    setSuccessMessage("");
+    setSelectedGradeRecordId(null);
+    clearPickedMedia();
+    stopCamera();
+    navigate("/multichoice");
+  }
+
+  async function deleteAssignment(aid: number) {
+    if (!uid) return;
+    if (!window.confirm("Bạn chắc chắn muốn xóa bài thi này?")) return;
+    try {
+      const res = await fetch(API_CONFIG.OMR.DELETE_ASSIGNMENT(uid, aid), { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.message || "Xóa bài thi thất bại");
+      setTests((prev) => prev.filter((x) => x.id !== aid));
+      if (detailTestId === aid) {
+        setDetailTestId(null);
+        setNavTab("home");
+      }
+      setSuccessMessage("Đã xóa bài thi.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Xóa bài thi thất bại");
+    }
+  }
+
+  function openRecordDetail(record: { id: string }) {
+    if (!selectedTest) return;
+    setSelectedGradeRecordId(record.id);
+    stopCamera();
+    navigate(`/multichoice/record-detail/${selectedTest.id}/${encodeURIComponent(record.id)}`);
+  }
+
+  function deleteGradeRecord(recordId: string) {
+    if (!selectedTest) return;
+    const currentRecords = getGradeRecordsFromLastResult(selectedTest.lastResult);
+    const target = currentRecords.find((record) => record.id === recordId);
+    if (!target) return;
+
+    if (!window.confirm(`Xóa bản ghi đã chấm cho ảnh ${target.file_name}?`)) return;
+
+    const nextRecords = currentRecords.filter((record) => record.id !== recordId);
+    const nextLastResult = rebuildLastResultFromRecords(selectedTest.lastResult, nextRecords);
+
+    setSelectedGradeRecordId(nextRecords[0]?.id || null);
+    setResultImageUrl(nextRecords[0]?.image_url || null);
+    updateSelectedTest({
+      gradedCount: nextRecords.length,
+      lastResult: nextLastResult,
+    });
+    setSuccessMessage("Đã xóa 1 bản ghi khỏi lịch sử chấm.");
   }
 
   async function persistAssignment(item: TestCardItem) {
@@ -1133,7 +790,7 @@ export default function MultichoicePage() {
       const created = mapAssignmentToCard(payload.assignment as AssignmentApiItem);
       setTests((prev) => [created, ...prev]);
       setSheetOpen(false);
-      setNavTab("tests");
+      setNavTab("home");
       setErrorMessage("");
       setNewTitle("");
       setNewCreatedAt(nowDateTimeLocal());
@@ -1147,6 +804,10 @@ export default function MultichoicePage() {
     const code = newCode.trim();
     if (!code) {
       setErrorMessage("Vui lòng nhập mã đề trước khi thêm.");
+      return;
+    }
+    if (!/^\d{3}$/.test(code)) {
+      setErrorMessage("Mã đề phải gồm đúng 3 chữ số (VD: 001).");
       return;
     }
     if (selectedTest.answerSets.some((x) => x.code === code)) {
@@ -1338,91 +999,23 @@ export default function MultichoicePage() {
     }
   }
 
-  function exportExcel() {
-    if (!selectedTest) {
-      setErrorMessage("Chưa chọn bài kiểm tra để xuất file.");
-      return;
-    }
-    const exportResult = selectedGradeRecord?.data || selectedTest.lastResult;
-    if (!exportResult) {
-      setErrorMessage("Chưa có dữ liệu để xuất Excel.");
-      return;
-    }
-    const csv = toCsv(exportResult);
-    downloadTextFile(`${selectedTest.title.replace(/\s+/g, "_")}_ket_qua.csv`, csv, "text/csv;charset=utf-8");
-  }
-
-  function exportPdfSummary() {
-    if (!selectedTest) return;
-    const r = selectedGradeRecord?.data || selectedTest.lastResult;
-    const uncertainWithKey = countUncertainWithKey(r || null);
-    const codeLabel = selectedAnswerSet ? `Mã đề ${selectedAnswerSet.code}` : "-";
-    const lines = [
-      `Bao cao OMR - ${selectedTest.title}`,
-      `Ngay tao: ${selectedTest.createdAt}`,
-      `Bo dap an: ${codeLabel}`,
-      `Anh bai lam: ${selectedGradeRecord?.file_name || "-"}`,
-      `So cau: ${selectedTest.questionCount}`,
-      `Tong diem: ${r?.score ?? "-"}`,
-      `So cau da cham: ${r?.graded_questions ?? "-"}`,
-      `Cau uncertain: ${uncertainWithKey}`,
-      "",
-      "Ghi chu: Bao cao nhanh dang van ban cho mobile UI.",
-    ];
-    downloadTextFile(`${selectedTest.title.replace(/\s+/g, "_")}_bao_cao.txt`, lines.join("\n"));
-  }
-
-  async function deleteAssignment(aid: number) {
-    if (!uid) return;
-    if (!window.confirm("Bạn chắc chắn muốn xóa bài thi này?")) return;
-    try {
-      const res = await fetch(API_CONFIG.OMR.DELETE_ASSIGNMENT(uid, aid), { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || "Xóa bài thi thất bại");
-      setTests((prev) => prev.filter((x) => x.id !== aid));
-      if (detailTestId === aid) {
-        setDetailTestId(null);
-        setNavTab("tests");
-      }
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Xóa bài thi thất bại");
-    }
-  }
-
-  function deleteGradeRecord(recordId: string) {
-    if (!selectedTest) return;
-    const currentRecords = getGradeRecordsFromLastResult(selectedTest.lastResult);
-    const target = currentRecords.find((record) => record.id === recordId);
-    if (!target) return;
-
-    if (!window.confirm(`Xóa bản ghi đã chấm cho ảnh ${target.file_name}?`)) return;
-
-    const nextRecords = currentRecords.filter((record) => record.id !== recordId);
-    const nextLastResult = rebuildLastResultFromRecords(selectedTest.lastResult, nextRecords);
-
-    setSelectedGradeRecordId(nextRecords[0]?.id || null);
-    setResultImageUrl(nextRecords[0]?.image_url || null);
-    updateSelectedTest({
-      gradedCount: nextRecords.length,
-      lastResult: nextLastResult,
-    });
-    setSuccessMessage("Đã xóa 1 bản ghi khỏi lịch sử chấm.");
-  }
-
-  function clearGradeHistory() {
-    if (!selectedTest) return;
-    if (gradeRecords.length <= 0) return;
-
-    if (!window.confirm(`Xóa toàn bộ ${gradeRecords.length} bản ghi đã chấm của bài thi này?`)) return;
-
-    const nextLastResult = rebuildLastResultFromRecords(selectedTest.lastResult, []);
-    setSelectedGradeRecordId(null);
-    setResultImageUrl(null);
-    updateSelectedTest({
-      gradedCount: 0,
-      lastResult: nextLastResult,
-    });
-    setSuccessMessage("Đã xóa toàn bộ lịch sử chấm.");
+  function renderStatsPanel(selectionMode: "inline" | "route") {
+    return (
+      <StatsPanel
+        selectionMode={selectionMode}
+        filteredGradeRecords={filteredGradeRecords}
+        gradeRecords={gradeRecords}
+        statsFilterMode={statsFilterMode}
+        statsFilterValue={statsFilterValue}
+        setStatsFilterMode={setStatsFilterMode}
+        setStatsFilterValue={setStatsFilterValue}
+        selectedGradeRecord={selectedGradeRecord}
+        handwritingOverlayRois={handwritingOverlayRois}
+        onOpenRecordDetail={openRecordDetail}
+        onDeleteGradeRecord={deleteGradeRecord}
+        onViewImage={setViewImage}
+      />
+    );
   }
 
   const buildSampleUrl = (sampleFile: string) => `${API_CONFIG.BASE_URL}/static/omr_data/${encodeURIComponent(sampleFile)}`;
@@ -1431,16 +1024,28 @@ export default function MultichoicePage() {
     <div className="omr-mobile-shell">
       <header className="omr-header">
         <div className="omr-header-side">
-          {showDetail ? (
+          {isRecordDetailPage ? (
+            <button
+              className="header-back-btn tap-feedback"
+              onClick={() => {
+                setSelectedGradeRecordId(null);
+                stopCamera();
+                navigate("/multichoice");
+              }}
+            >
+              ← Danh sách
+            </button>
+          ) : showDetail ? (
             <button
               className="header-back-btn tap-feedback"
               onClick={() => {
                 setDetailTestId(null);
-                setNavTab("tests");
+                setNavTab("home");
                 stopCamera();
+                navigate("/multichoice");
               }}
             >
-              ← DS bài thi
+              ← Trang chủ
             </button>
           ) : navTab !== "home" ? (
             <button className="header-back-btn tap-feedback" onClick={() => setNavTab("home")}>
@@ -1459,125 +1064,82 @@ export default function MultichoicePage() {
           )}
         </div>
         <div className="omr-header-title">
-          {showDetail ? `Chấm điểm: ${selectedTest.title}` : navTab === "home" ? "Trang chủ OMR" : navTab === "tests" ? "Danh sách bài thi" : "Kho mẫu OMR"}
+          {isRecordDetailPage
+            ? "Thông tin chi tiết bản ghi"
+            : showDetail
+              ? "Thông tin bài thi"
+              : navTab === "home"
+                ? "Trang chủ OMR"
+                : "Kho mẫu OMR"}
         </div>
-        <div className="omr-header-side" style={{ justifyContent: "flex-end" }}>
-          {showDetail ? (
-            <button
-              className="header-back-btn tap-feedback"
-              onClick={() => {
-                setDetailTestId(null);
-                setNavTab("home");
-                stopCamera();
-              }}
-            >
-              Trang chủ
-            </button>
-          ) : navTab === "home" ? (
-            <button className="header-back-btn tap-feedback" onClick={() => setNavTab("tests")}>
-              Bài thi
-            </button>
-          ) : null}
-        </div>
+        <div className="omr-header-side" style={{ justifyContent: "flex-end" }} />
       </header>
 
       <main className="omr-main">
-        {!showDetail && navTab === "home" && (
+        {isRecordDetailPage && (
+          <section className="omr-section">
+            {!selectedTest ? (
+              <div className="empty-box">Không tìm thấy bài thi hoặc chưa có dữ liệu bản ghi.</div>
+            ) : (
+              <>
+                <div className="detail-meta">Tên bài: {selectedTest.title}</div>
+                <div className="detail-meta">Ngày tạo: {selectedTest.createdAt || "-"}</div>
+                <div className="detail-meta">Tổng số mã đề: {selectedTest.answerSets.length}</div>
+                {renderStatsPanel("route")}
+              </>
+            )}
+          </section>
+        )}
+
+        {!isRecordDetailPage && !showDetail && navTab === "home" && (
           <section className="omr-section">
             <h3 className="section-title">Tổng quan nhanh</h3>
             <div className="home-note">Hiện có {tests.length} bài thi đã tạo. Mỗi bài thi có thể chứa nhiều mã đề.</div>
             <div className="home-note">
               Bài kiểm tra có thể chứa nhiều mã đề. Hãy tạo bài kiểm tra trước, sau đó thêm mã đề trong tab Đáp án.
             </div>
-            <div className="home-quick-actions">
-              <button
-                className="mini-btn tap-feedback"
-                onClick={() => {
-                  stopCamera();
-                  navigate("/home");
-                }}
-              >
-                ← Về HomePage
-              </button>
-              <button className="mini-btn tap-feedback" onClick={() => { setNavTab("tests"); setSheetOpen(true); }}>
-                + Tạo bài kiểm tra mới
-              </button>
-              <button className="mini-btn tap-feedback" onClick={() => setNavTab("tests")}>
-                Xem danh sách bài kiểm tra
-              </button>
-            </div>
             <div className="home-list-wrap">
-              <h4 className="home-list-title">Danh sách bài kiểm tra gần đây</h4>
+              <h4 className="home-list-title">Danh sách bài thi</h4>
               {tests.length === 0 && <div className="empty-box">Chưa có bài kiểm tra nào. Bấm + để tạo mới.</div>}
-              {tests.slice(0, 4).map((item) => (
-                <button
+              {tests.map((item) => (
+                <div
                   key={`home_${item.id}`}
                   className="test-card tap-feedback"
-                  onClick={() => {
-                    setNavTab("tests");
-                    setDetailTestId(item.id);
-                    setDetailTab("grading");
+                  onClick={() => openTestForGrading(item.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openTestForGrading(item.id);
+                    }
                   }}
                 >
                   <div className="test-card-head">
                     <div className="test-title">{item.title}</div>
                     <div className="template-tag">{item.answerSets.length} mã đề</div>
                   </div>
-                  <div className="test-sub">Tạo ngày: {item.createdAt}</div>
-                  <div className="test-sub">Mã đề: {item.answerSets.map((x) => x.code).join(", ") || "(chưa thêm)"}</div>
-                </button>
+                  <div className="test-sub">Ngày tạo: {item.createdAt || "-"}</div>
+                  <div className="test-sub">Tổng số mã đề: {item.answerSets.length}</div>
+                  <div className="test-card-actions">
+                    <button
+                      type="button"
+                      className="mini-btn danger tap-feedback test-card-delete-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void deleteAssignment(item.id);
+                      }}
+                    >
+                      Xóa bài thi
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </section>
         )}
 
-        {!showDetail && navTab === "tests" && (
-          <section className="omr-section">
-            {tests.length === 0 && <div className="empty-box">Chưa có bài kiểm tra nào. Bấm nút + để tạo mới.</div>}
-            {tests.map((item) => (
-              <div key={item.id} className="test-card tap-feedback" onClick={() => {
-                setDetailTestId(item.id);
-                setDetailTab("grading");
-                clearPickedMedia();
-                setResultImageUrl(null);
-                setErrorMessage("");
-                stopCamera();
-              }} role="button" tabIndex={0} onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setDetailTestId(item.id);
-                  setDetailTab("grading");
-                  clearPickedMedia();
-                  setResultImageUrl(null);
-                  setErrorMessage("");
-                  stopCamera();
-                }
-              }}>
-                <div className="test-card-head">
-                  <div className="test-title">{item.title}</div>
-                  <div className="template-tag">{item.answerSets.length} mã đề</div>
-                </div>
-                <div className="test-sub">Tạo ngày: {item.createdAt}</div>
-                <div className="test-sub">Mã đề: {item.answerSets.map((x) => x.code).join(", ") || "(chưa thêm)"}</div>
-                <div className="status-pill">Đã chấm {item.gradedCount}/{item.questionCount}</div>
-                <div style={{ marginTop: "8px" }}>
-                  <button
-                    className="mini-btn danger tap-feedback"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void deleteAssignment(item.id);
-                    }}
-                    type="button"
-                  >
-                    Xóa bài thi
-                  </button>
-                </div>
-              </div>
-            ))}
-          </section>
-        )}
-
-        {!showDetail && navTab === "templates" && (
+        {!isRecordDetailPage && !showDetail && navTab === "templates" && (
           <section className="omr-section">
             <h4 className="home-list-title">Phiếu mẫu từ omr_data (dev cấu hình)</h4>
             {formProfilesLoading && <div className="empty-box">Đang tải profile phiếu mẫu...</div>}
@@ -1632,18 +1194,6 @@ export default function MultichoicePage() {
             <div className="detail-meta">Tạo lúc: {selectedTest.createdAt}</div>
             <div className="detail-meta">Profile: {selectedTest.formProfileCode || "(mặc định)"}</div>
 
-            <div className="variant-switch-row">
-              {selectedTest.answerSets.map((set) => (
-                <button
-                  key={set.code}
-                  className={`variant-chip tap-feedback ${selectedTest.activeCode === set.code ? "active" : ""}`}
-                  onClick={() => updateSelectedTest({ activeCode: set.code })}
-                >
-                  Mã đề {set.code}
-                </button>
-              ))}
-            </div>
-
             <div className="top-tab-scroll">
               <button className={`top-tab tap-feedback ${detailTab === "grading" ? "active" : ""}`} onClick={() => setDetailTab("grading")}>Chấm bài</button>
               <button className={`top-tab tap-feedback ${detailTab === "answers" ? "active" : ""}`} onClick={() => setDetailTab("answers")}>Đáp án</button>
@@ -1654,7 +1204,11 @@ export default function MultichoicePage() {
             {detailTab === "grading" && (
               <div>
                 <div className="smart-scanner-box">
-                  <div className="smart-camera-stage" ref={cameraStageRef}>
+                  <div
+                    className="smart-camera-stage"
+                    ref={cameraStageRef}
+                    style={{ aspectRatio: `1 / ${scannerAspectRatio}` }}
+                  >
                     <video
                       ref={videoRef}
                       className={`camera-video ${cameraOn ? "" : "hidden"}`}
@@ -1740,16 +1294,18 @@ export default function MultichoicePage() {
                 />
 
                 {pickedPreviews.length > 0 && (
-                  <div className="omr-preview-row">
-                    {pickedPreviews.map((url, idx) => (
-                      <div key={`${url}-${idx}`} className="omr-preview-item">
-                        <span className={`preview-source-badge ${pickedSource || "library"}`}>
-                          {pickedSource === "camera" ? "Camera" : pickedSource === "mixed" ? "Hỗn hợp" : "Thư viện"}
-                        </span>
-                        <img src={url} alt={`scan-${idx}`} onClick={() => setViewImage(url)} />
-                        <button className="omr-remove-preview" onClick={() => removePickedFile(idx)}>×</button>
-                      </div>
-                    ))}
+                  <div className="omr-preview-strip">
+                    <div className="omr-preview-row">
+                      {pickedPreviews.map((url, idx) => (
+                        <div key={`${url}-${idx}`} className="omr-preview-item">
+                          <span className={`preview-source-badge ${pickedSource || "library"}`}>
+                            {pickedSource === "camera" ? "Camera" : pickedSource === "mixed" ? "Hỗn hợp" : "Thư viện"}
+                          </span>
+                          <img src={url} alt={`scan-${idx}`} onClick={() => setViewImage(url)} />
+                          <button className="omr-remove-preview" onClick={() => removePickedFile(idx)}>×</button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -1775,11 +1331,31 @@ export default function MultichoicePage() {
                   <input
                     className="code-input"
                     value={newCode}
-                    onChange={(e) => setNewCode(e.target.value.trim())}
-                    placeholder="Nhập mã đề (VD: 001)"
+                    onChange={(e) => setNewCode(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                    placeholder="Nhập mã đề 3 số (VD: 001)"
+                    inputMode="numeric"
+                    pattern="\\d{3}"
+                    maxLength={3}
                   />
                   <button className="code-add-btn tap-feedback" onClick={addAnswerCode}>Thêm mã đề</button>
                 </div>
+
+                {selectedTest.answerSets.length > 0 && (
+                  <div className="answer-code-section">
+                    <div className="answer-code-title">Danh sách Mã đề</div>
+                    <div className="variant-switch-row">
+                      {selectedTest.answerSets.map((set) => (
+                        <button
+                          key={set.code}
+                          className={`variant-chip tap-feedback ${selectedTest.activeCode === set.code ? "active" : ""}`}
+                          onClick={() => updateSelectedTest({ activeCode: set.code })}
+                        >
+                          Mã đề {set.code}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {selectedTest.answerSets.length === 0 && (
                   <div className="empty-box">Chưa có mã đề. Hãy thêm mã đề trước khi nhập đáp án.</div>
@@ -1803,7 +1379,7 @@ export default function MultichoicePage() {
                 ))}
 
                 {selectedTest.answerSets.length > 0 && (
-                  <div className="variant-switch-row">
+                  <div className="variant-remove-row">
                     {selectedTest.answerSets.map((set) => (
                       <button key={`remove_${set.code}`} className="variant-chip tap-feedback" onClick={() => removeAnswerCode(set.code)}>
                         Xóa mã {set.code}
@@ -1815,207 +1391,38 @@ export default function MultichoicePage() {
             )}
 
             {detailTab === "stats" && (
-              <div className="stats-wrap">
-                <div className="stats-summary">
-                  <div className="pie" style={pieStyle} />
-                  <div className="legend">
-                    <p><span className="dot ok" /> Đúng: {statData.correct}</p>
-                    <p><span className="dot uncertain" /> Không chắc: {statData.uncertain}</p>
-                    <p><span className="dot wrong" /> Sai: {statData.wrong}</p>
-                    <p><span className="dot info" /> Điểm: {statsResult?.score ?? "-"}</p>
-                  </div>
-                </div>
-
-                <div className="stats-records-layout">
-                  <div className="stats-record-list">
-                    <div className="stats-record-header">
-                      <div className="stats-record-title">Danh sách bài đã chấm ({gradeRecords.length})</div>
-                      <button
-                        type="button"
-                        className="mini-btn danger tap-feedback stats-record-clear-btn"
-                        onClick={clearGradeHistory}
-                        disabled={gradeRecords.length <= 0}
-                      >
-                        Xóa toàn bộ
-                      </button>
-                    </div>
-                    {gradeRecords.length === 0 && (
-                      <div className="empty-box">Chưa có bản ghi theo từng ảnh. Hãy chấm ít nhất 1 ảnh để tạo danh sách.</div>
-                    )}
-                    {gradeRecords.map((record) => (
-                      <div
-                        key={record.id}
-                        className={`stats-record-item tap-feedback ${selectedGradeRecord?.id === record.id ? "active" : ""}`}
-                        onClick={() => setSelectedGradeRecordId(record.id)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setSelectedGradeRecordId(record.id);
-                          }
-                        }}
-                      >
-                        <div className="stats-record-head">
-                          <strong>{record.file_name}</strong>
-                          <span>{formatDateTimeLabel(record.graded_at) || record.graded_at}</span>
-                        </div>
-                        <div className="stats-record-sub">SBD/MSSV: {String(record.data?.student_id || "-")}</div>
-                        <div className="stats-record-sub">Mã đề: {String(record.data?.exam_code || "-")} | Điểm: {record.data?.score ?? "-"}</div>
-                        <div className="stats-record-actions">
-                          <button
-                            type="button"
-                            className="mini-btn danger tap-feedback stats-record-delete-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteGradeRecord(record.id);
-                            }}
-                          >
-                            Xóa lịch sử
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="stats-record-detail">
-                    {!selectedGradeRecord ? (
-                      <div className="empty-box">Chọn một bản ghi ở cột trái để xem chi tiết.</div>
-                    ) : (
-                      <>
-                        <div className="stats-detail-grid">
-                          <div className="stats-detail-cell">
-                            <span>Số báo danh</span>
-                            <strong>{String(selectedGradeRecord.data?.student_id || "-")}</strong>
-                          </div>
-                          <div className="stats-detail-cell">
-                            <span>Mã đề</span>
-                            <strong>{String(selectedGradeRecord.data?.exam_code || "-")}</strong>
-                          </div>
-                          <div className="stats-detail-cell">
-                            <span>MSSV</span>
-                            <strong>{String(selectedGradeRecord.data?.student_id || "-")}</strong>
-                          </div>
-                          <div className="stats-detail-cell">
-                            <span>Nguồn ảnh</span>
-                            <strong>{selectedGradeRecord.source === "batch" ? "Batch" : "Camera/Single"}</strong>
-                          </div>
-                        </div>
-
-                        <div className="stats-image-grid">
-                          <button
-                            type="button"
-                            className={`stats-image-card tap-feedback ${selectedGradeRecord.sid_crop_url ? "" : "disabled"}`}
-                            onClick={() => {
-                              if (selectedGradeRecord.sid_crop_url) setViewImage(selectedGradeRecord.sid_crop_url);
-                            }}
-                            disabled={!selectedGradeRecord.sid_crop_url}
-                          >
-                            {selectedGradeRecord.sid_crop_url ? <img src={selectedGradeRecord.sid_crop_url} alt="SID crop" /> : <div className="stats-image-empty">Không có ảnh SID</div>}
-                            <span>SID crop</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className={`stats-image-card tap-feedback ${selectedGradeRecord.mcq_crop_url ? "" : "disabled"}`}
-                            onClick={() => {
-                              if (selectedGradeRecord.mcq_crop_url) setViewImage(selectedGradeRecord.mcq_crop_url);
-                            }}
-                            disabled={!selectedGradeRecord.mcq_crop_url}
-                          >
-                            {selectedGradeRecord.mcq_crop_url ? <img src={selectedGradeRecord.mcq_crop_url} alt="MCQ crop" /> : <div className="stats-image-empty">Không có ảnh MCQ</div>}
-                            <span>MCQ crop</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className={`stats-image-card tap-feedback ${selectedGradeRecord.image_url ? "" : "disabled"}`}
-                            onClick={() => {
-                              if (selectedGradeRecord.image_url) setViewImage(selectedGradeRecord.image_url);
-                            }}
-                            disabled={!selectedGradeRecord.image_url}
-                          >
-                            {selectedGradeRecord.image_url ? <img src={selectedGradeRecord.image_url} alt="Kết quả chấm" /> : <div className="stats-image-empty">Không có ảnh kết quả</div>}
-                            <span>Ảnh kết quả</span>
-                          </button>
-                        </div>
-
-                        <div className="stats-telemetry-actions">
-                          <button
-                            type="button"
-                            className={`ghost-btn tap-feedback stats-telemetry-btn ${selectedTelemetryJsonUrl ? "" : "disabled"}`}
-                            onClick={() => {
-                              if (selectedTelemetryJsonUrl) {
-                                window.open(selectedTelemetryJsonUrl, "_blank", "noopener,noreferrer");
-                              }
-                            }}
-                            disabled={!selectedTelemetryJsonUrl}
-                          >
-                            Xem telemetry JSON
-                          </button>
-
-                          {selectedTelemetryJsonUrl ? (
-                            <a
-                              className="mini-btn tap-feedback template-download-btn stats-telemetry-link"
-                              href={selectedTelemetryJsonUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              download
-                            >
-                              Tải telemetry JSON
-                            </a>
-                          ) : (
-                            <div className="stats-telemetry-missing">Chưa có telemetry JSON cho bản ghi này.</div>
-                          )}
-                        </div>
-
-                        <div className="stats-json-wrap">
-                          <div className="stats-json-title">Kết quả trích xuất</div>
-                          <pre>{JSON.stringify(selectedGradeRecord.data, null, 2)}</pre>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
+              renderStatsPanel("inline")
             )}
 
             {detailTab === "export" && (
-              <div className="export-wrap">
-                <button className="export-btn tap-feedback" onClick={exportPdfSummary}>📄 Xuất PDF</button>
-                <button className="export-btn tap-feedback" onClick={exportExcel}>📊 Xuất Excel</button>
-              </div>
+              <ExportPanel
+                selectedTest={selectedTest}
+                gradeRecords={gradeRecords}
+                onError={setErrorMessage}
+                onSuccess={setSuccessMessage}
+              />
             )}
           </section>
         )}
       </main>
 
-      {!showDetail && navTab === "tests" && (
+      {!isRecordDetailPage && !showDetail && navTab === "home" && (
         <button className="fab tap-feedback" onClick={() => setSheetOpen(true)}>
           +
         </button>
       )}
 
-      <nav className="bottom-nav">
+      {!isRecordDetailPage && <nav className="bottom-nav">
         <button
           className={`nav-btn tap-feedback ${navTab === "home" ? "active" : ""}`}
           onClick={() => {
             setDetailTestId(null);
             setNavTab("home");
             stopCamera();
+            navigate("/multichoice");
           }}
         >
           Trang chủ
-        </button>
-        <button
-          className={`nav-btn tap-feedback ${navTab === "tests" ? "active" : ""}`}
-          onClick={() => {
-            setDetailTestId(null);
-            setNavTab("tests");
-            stopCamera();
-          }}
-        >
-          Bài thi
         </button>
         <button
           className={`nav-btn tap-feedback ${navTab === "templates" ? "active" : ""}`}
@@ -2023,11 +1430,12 @@ export default function MultichoicePage() {
             setDetailTestId(null);
             setNavTab("templates");
             stopCamera();
+            navigate("/multichoice");
           }}
         >
           Mẫu có sẵn
         </button>
-      </nav>
+      </nav>}
 
       {sheetOpen && (
         <>

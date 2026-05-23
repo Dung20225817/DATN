@@ -1,5 +1,5 @@
 import { useState } from "react";
-import "../UI_Components/LoginPage.css";
+import "./LoginPage.css";
 import { motion } from "framer-motion";
 import { Smartphone, Mail, Lock } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
@@ -16,7 +16,7 @@ export default function LoginPage() {
     try {
       setErrorMessage("");
       setIsLoading(true);
-      
+
       const res = await fetch(API_CONFIG.AUTH.LOGIN, {
         method: "POST",
         headers: {
@@ -52,7 +52,6 @@ export default function LoginPage() {
       return;
     }
 
-    // Save user info to localStorage
     localStorage.setItem("token", user.token || "");
     localStorage.setItem("uid", user.uid?.toString() || "");
     localStorage.setItem("user_name", user.user_name || "");
@@ -62,8 +61,6 @@ export default function LoginPage() {
 
     navigate("/home");
   };
-
-
 
   return (
     <div className="login-page-container">
@@ -107,26 +104,28 @@ export default function LoginPage() {
               </div>
 
               {errorMessage && (
-                <div style={{
-                  color: "#f44336",
-                  fontSize: "14px",
-                  padding: "10px",
-                  backgroundColor: "#ffebee",
-                  borderRadius: "4px",
-                  marginTop: "10px"
-                }}>
+                <div
+                  style={{
+                    color: "#f44336",
+                    fontSize: "14px",
+                    padding: "10px",
+                    backgroundColor: "#ffebee",
+                    borderRadius: "4px",
+                    marginTop: "10px",
+                  }}
+                >
                   {errorMessage}
                 </div>
               )}
             </div>
 
-            <button 
-              className="login-button" 
+            <button
+              className="login-button"
               onClick={handleLogin}
               disabled={isLoading}
               style={{
                 opacity: isLoading ? 0.7 : 1,
-                cursor: isLoading ? "not-allowed" : "pointer"
+                cursor: isLoading ? "not-allowed" : "pointer",
               }}
             >
               {isLoading ? "Đang xử lý..." : "Đăng nhập"}

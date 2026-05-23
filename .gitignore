@@ -81,7 +81,9 @@ fe/build/
 fe/.next/
 fe/out/
 
-# Uploads and temporary files
+# Runtime storage
+storage/uploads/
+storage/logs/
 uploads/
 be/uploads/
 logs/

@@ -21,17 +21,6 @@ export const API_CONFIG = {
     REGISTER: `${API_BASE_URL}/api/register`,
   },
   
-  // Handwritten essay endpoints (NEW - 2 step workflow)
-  HANDWRITTEN: {
-    UPLOAD_ANSWER_KEY: `${API_BASE_URL}/api/handwritten/upload-answer-key`,
-    SAVE_ANSWER_KEY: `${API_BASE_URL}/api/handwritten/save-answer-key`,
-    UPLOAD: `${API_BASE_URL}/api/handwritten/upload`,
-    LIST_ANSWER_KEYS: (uid: number) => `${API_BASE_URL}/api/handwritten/answer-keys/${uid}`,
-    GET_ANSWER_KEY: (id: number, uid: number) => `${API_BASE_URL}/api/handwritten/answer-key/${id}?uid=${uid}`,
-    DOWNLOAD_ANSWER_KEY: (id: number, uid: number) => `${API_BASE_URL}/api/handwritten/answer-key/${id}/download?uid=${uid}`,
-    DELETE_ANSWER_KEY: (id: number, uid: number) => `${API_BASE_URL}/api/handwritten/answer-key/${id}?uid=${uid}`,
-  },
-  
   // OMR grading endpoints
   OMR: {
     GRADE: `${API_BASE_URL}/api/omr/grade`,

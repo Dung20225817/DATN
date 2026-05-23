@@ -8,7 +8,7 @@
   left: 0;
   width: 100%;
   height: var(--top-menu-height);
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   padding: 0 var(--spacing-6);
@@ -16,7 +16,7 @@
   align-items: center;
   justify-content: space-between;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
   z-index: 1000;
   transition: all var(--transition-base);
 }
@@ -27,15 +27,30 @@
   background: rgba(255, 255, 255, 0.95);
 }
 
-/* Logo Area (if you want to add later) */
-.menu-logo {
-  font-size: 1.5rem;
+.top-menu-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 0 0 auto;
+  color: #111827;
+  font-size: 1.08rem;
   font-weight: 800;
-  background: var(--gradient-primary);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
   margin-right: var(--spacing-6);
+}
+
+.top-menu-brand:hover {
+  color: #111827;
+}
+
+.top-menu-brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: #ffffff;
+  background: #0f766e;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.22);
 }
 
 /* Right Menu Container */
@@ -101,7 +116,7 @@
   cursor: pointer;
   color: var(--color-neutral-700);
   background: var(--color-neutral-100);
-  border-radius: var(--radius-full);
+  border-radius: 8px;
   transition: all var(--transition-base);
   margin-left: var(--spacing-3);
 }
@@ -109,7 +124,7 @@
 .user-icon:hover {
   color: white;
   background: var(--gradient-primary);
-  transform: scale(1.1) rotate(5deg);
+  transform: scale(1.05);
   box-shadow: var(--shadow-glow);
 }
 
@@ -122,6 +137,17 @@
   .top-menu {
     padding: 0 var(--spacing-4);
     height: var(--top-menu-height);
+  }
+
+  .top-menu-brand {
+    gap: var(--spacing-2);
+    margin-right: var(--spacing-2);
+    font-size: 0.98rem;
+  }
+
+  .top-menu-brand-mark {
+    width: 34px;
+    height: 34px;
   }
 
   .menu-link {
@@ -140,6 +166,10 @@
 @media (max-width: 430px) {
   .top-menu {
     padding-inline: var(--spacing-2);
+  }
+
+  .top-menu-brand span:last-child {
+    display: none;
   }
 
   .menu-link {
