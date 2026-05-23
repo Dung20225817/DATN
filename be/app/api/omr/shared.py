@@ -273,6 +273,31 @@ def _sanitize_norm_rect(raw: Any) -> Optional[dict]:
     h = max(0.01, min(1.0 - y, h))
     return {"x": round(x, 6), "y": round(y, 6), "w": round(w, 6), "h": round(h, 6)}
 
+def _merge_norm_rects(rects: list) -> Optional[dict]:
+    valid = [rect for rect in rects if isinstance(rect, dict)]
+    if not valid:
+        return None
+
+    x1 = min(float(rect["x"]) for rect in valid)
+    y1 = min(float(rect["y"]) for rect in valid)
+    x2 = max(float(rect["x"]) + float(rect["w"]) for rect in valid)
+    y2 = max(float(rect["y"]) + float(rect["h"]) for rect in valid)
+    return _sanitize_norm_rect({"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1})
+
+def _sanitize_ho_ten_roi(field_rois_raw: Any) -> Optional[dict]:
+    if not isinstance(field_rois_raw, dict):
+        return None
+
+    direct = _sanitize_norm_rect(field_rois_raw.get("ho_ten"))
+    if direct is not None:
+        return direct
+
+    legacy_rects = [
+        _sanitize_norm_rect(field_rois_raw.get("ho_ten_1")),
+        _sanitize_norm_rect(field_rois_raw.get("ho_ten_2")),
+    ]
+    return _merge_norm_rects([rect for rect in legacy_rects if rect is not None])
+
 def _sanitize_sid_row_offsets(raw: Any) -> Optional[list]:
     if raw is None:
         return None
@@ -478,10 +503,9 @@ def _sanitize_handwriting_fields(raw: Any) -> Optional[dict]:
 
     field_rois_raw = raw.get("field_rois") if isinstance(raw.get("field_rois"), dict) else {}
     field_rois: Dict[str, dict] = {}
-    for key in ["truong", "ho_ten", "lop", "mon"]:
-        rect = _sanitize_norm_rect(field_rois_raw.get(key))
-        if rect is not None:
-            field_rois[key] = rect
+    rect = _sanitize_ho_ten_roi(field_rois_raw)
+    if rect is not None:
+        field_rois["ho_ten"] = rect
     if field_rois:
         out["field_rois"] = field_rois
 
