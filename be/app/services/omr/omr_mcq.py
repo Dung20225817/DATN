@@ -787,15 +787,31 @@ def build_mcq_roi_from_black_markers(
     x_right_anchor = -1.0
 
     if long_form_mode:
-        # For long forms, use fid_left_x and fid_block_right_x to get the exact column span.
-        # fid_left_x = x position of the leftmost fiducial (left edge of block 1)
-        # fid_block_right_x = extrapolated right edge of the last block
+        # For long forms, fid_block_right_x is extrapolated from fiducial spacing and
+        # can include non-answer frame/page anchors. Prefer the detected bubble span
+        # for the right edge so the visual ROI does not become wider than the MCQ grid.
         fid_lx = _safe_float(mcq_geometry.get("fid_left_x"), -1.0)
-        fid_rx = _safe_float(mcq_geometry.get("fid_block_right_x"), -1.0)
-        if fid_rx > fid_lx > 0.0:
+        fid_rx = _safe_float(mcq_geometry.get("fid_right_x"), -1.0)
+        fid_block_rx = _safe_float(mcq_geometry.get("fid_block_right_x"), -1.0)
+        x_left_geom = _safe_float(mcq_geometry.get("left_x"), -1.0)
+        x_right_geom = _safe_float(mcq_geometry.get("right_x"), -1.0)
+
+        if x_right_geom > x_left_geom > 0.0 and (x_right_geom - x_left_geom) >= max(120.0, 0.35 * float(img_w)):
+            x_left_anchor = float(x_left_geom)
+            if fid_lx > 0.0 and fid_lx < x_left_anchor and (x_left_anchor - fid_lx) <= max(80.0, 0.12 * float(img_w)):
+                x_left_anchor = float(fid_lx)
+            x_right_anchor = float(x_right_geom)
+            if fid_rx > x_right_anchor and (fid_rx - x_right_anchor) <= max(35.0, 0.04 * float(img_w)):
+                x_right_anchor = float(fid_rx)
+            x_source = "bubble-span-long-form"
+        elif fid_rx > fid_lx > 0.0:
+            block_w = _safe_float(mcq_geometry.get("fid_block_width"), 0.0)
+            capped_extra = max(0.0, min(0.45 * float(block_w), 0.10 * float(img_w)))
+            if fid_block_rx > fid_rx:
+                capped_extra = min(capped_extra, float(fid_block_rx - fid_rx))
             x_left_anchor = float(fid_lx)
-            x_right_anchor = float(fid_rx)
-            x_source = "fid-block-span-long-form"
+            x_right_anchor = float(fid_rx + capped_extra)
+            x_source = "fid-span-capped-long-form"
         else:
             x_left_anchor = float(x)
             x_right_anchor = float(x + w)

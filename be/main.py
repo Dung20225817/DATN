@@ -1,11 +1,16 @@
 # main.py - FastAPI Application Entry Point
 
 import json
+import logging
+from pathlib import Path
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-import logging
+
+load_dotenv(Path(__file__).with_name(".env"))
 
 from app.core.paths import UPLOADS_DIR, ensure_runtime_dirs
 from app.core.logging import setup_logging, get_logger

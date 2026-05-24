@@ -110,6 +110,37 @@ def _resolve_ho_ten_roi(field_rois, img_w: int, img_h: int):
     return _merge_roi_rects(legacy_rois, img_w, img_h)
 
 
+def _infer_short_form_ho_ten_roi(anchors, sid_roi, mcq_roi, img_w: int, img_h: int):
+    del anchors
+
+    if not isinstance(sid_roi, dict):
+        return None
+
+    # The configured A4 20/40/50 forms keep the handwritten information panel
+    # immediately to the left of the student-id grid, with MCQ starting low.
+    if isinstance(mcq_roi, dict):
+        mcq_top = _safe_float(mcq_roi.get("y"), 0.0)
+        if mcq_top < float(img_h) * 0.42:
+            return None
+
+    sid_x = _safe_float(sid_roi.get("x"), 0.0)
+    sid_y = _safe_float(sid_roi.get("y"), 0.0)
+    sid_w = _safe_float(sid_roi.get("w"), 0.0)
+    sid_h = _safe_float(sid_roi.get("h"), 0.0)
+    if sid_w <= 0.0 or sid_h <= 0.0:
+        return None
+
+    x = int(round(max(float(img_w) * 0.24, sid_x - float(img_w) * 0.285)))
+    y = int(round(sid_y + sid_h * 0.18))
+    w = int(round(min(float(img_w) * 0.30, sid_x - x - float(img_w) * 0.008)))
+    h = int(round(max(float(img_h) * 0.052, sid_h * 0.28)))
+
+    x, y, w, h = _clip_rect(x, y, w, h, img_w, img_h)
+    if w < 40 or h < 20:
+        return None
+    return {"x": int(x), "y": int(y), "w": int(w), "h": int(h)}
+
+
 def _parse_handwriting_config(profile_handwriting_fields) -> Dict[str, object]:
     cfg = profile_handwriting_fields if isinstance(profile_handwriting_fields, dict) else {}
 
@@ -126,11 +157,19 @@ def _parse_handwriting_config(profile_handwriting_fields) -> Dict[str, object]:
     }
 
 
-def _build_handwriting_rois(anchors, sid_roi, mcq_roi, img_w: int, img_h: int, cfg_field_rois) -> Dict[str, Dict[str, int]]:
-    del anchors, sid_roi, mcq_roi
-
+def _build_handwriting_rois(
+    anchors,
+    sid_roi,
+    mcq_roi,
+    img_w: int,
+    img_h: int,
+    cfg_field_rois,
+    long_form_mode: bool = False,
+) -> Dict[str, Dict[str, int]]:
     cfg_rois = cfg_field_rois if isinstance(cfg_field_rois, dict) else {}
     parsed = _resolve_ho_ten_roi(cfg_rois, img_w, img_h)
+    if parsed is None and not bool(long_form_mode):
+        parsed = _infer_short_form_ho_ten_roi(anchors, sid_roi, mcq_roi, img_w, img_h)
     if parsed is None:
         return {}
     return {"ho_ten": parsed}

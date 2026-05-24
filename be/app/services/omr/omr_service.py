@@ -104,6 +104,541 @@ def _normalize_exam_code_key(raw) -> str:
     return text.upper()
 
 
+def _reject_long_form_low_mcq_top(marker_meta: Dict[str, object], img_h: int) -> bool:
+    if not isinstance(marker_meta, dict) or not bool(marker_meta.get("used", False)):
+        return False
+
+    y_top = _safe_float(marker_meta.get("y_top_anchor"), -1.0)
+    line_h = _safe_float(marker_meta.get("line_h"), float(img_h) * 0.0220)
+    if y_top <= 0.0:
+        return False
+
+    expected_top = float(img_h) * 0.30
+    tolerance = max(2.5 * max(1.0, float(line_h)), float(img_h) * 0.10)
+    return y_top > (expected_top + tolerance)
+
+
+def _validate_mcq_block_bands(
+    block_bands: Sequence[Tuple[float, float]],
+    mcq_roi: Dict[str, int],
+    block_count: int,
+    choices: int,
+    long_form_mode: bool,
+    source: str = "geometry",
+) -> Tuple[List[Tuple[float, float]], Dict[str, object]]:
+    meta: Dict[str, object] = {
+        "used": False,
+        "source": str(source),
+        "reason": "empty",
+        "count": 0,
+    }
+
+    if not isinstance(block_bands, (list, tuple)):
+        meta["reason"] = "invalid-type"
+        return [], meta
+
+    roi_x = float(_safe_int(mcq_roi.get("x"), 0))
+    roi_w = float(max(1, _safe_int(mcq_roi.get("w"), 1)))
+    roi_right = float(roi_x + roi_w)
+    count = max(1, int(block_count))
+    choice_count = max(2, int(choices))
+
+    normalized: List[Tuple[float, float]] = []
+    for raw in list(block_bands):
+        if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+            continue
+        x1 = _safe_float(raw[0], -1.0)
+        x2 = _safe_float(raw[1], -1.0)
+        if not (math.isfinite(x1) and math.isfinite(x2)):
+            continue
+        if x2 <= x1:
+            continue
+        normalized.append((float(x1), float(x2)))
+
+    normalized = sorted(normalized, key=lambda band: float(band[0]))
+    meta["count"] = int(len(normalized))
+    if len(normalized) < count:
+        meta["reason"] = "insufficient-bands"
+        return [], meta
+
+    normalized = normalized[:count]
+    widths = [float(x2 - x1) for x1, x2 in normalized]
+    min_width = max(18.0, 0.012 * roi_w * float(choice_count))
+    max_width = max(90.0, 0.32 * roi_w)
+    if any(width < min_width or width > max_width for width in widths):
+        meta["reason"] = "band-width-out-of-range"
+        meta["widths"] = [round(float(width), 4) for width in widths]
+        return [], meta
+
+    if len(widths) >= 2:
+        median_w = float(np.median(widths))
+        if median_w <= 0.0 or max(abs(float(width) - median_w) for width in widths) > (0.55 * median_w):
+            meta["reason"] = "band-width-inconsistent"
+            meta["widths"] = [round(float(width), 4) for width in widths]
+            return [], meta
+
+    slack = 0.06 * roi_w if long_form_mode else 0.10 * roi_w
+    if normalized[0][0] < (roi_x - slack) or normalized[-1][1] > (roi_right + slack):
+        meta["reason"] = "outside-mcq-roi"
+        meta["roi"] = dict(mcq_roi)
+        meta["bands"] = [[round(float(a), 4), round(float(b), 4)] for a, b in normalized]
+        return [], meta
+
+    overall_span = float(normalized[-1][1] - normalized[0][0])
+    min_cover = 0.42 if long_form_mode else 0.30
+    max_cover = 0.96 if long_form_mode else 1.05
+    if overall_span < (min_cover * roi_w) or overall_span > (max_cover * roi_w):
+        meta["reason"] = "overall-span-out-of-range"
+        meta["overall_span"] = round(float(overall_span), 4)
+        meta["roi_w"] = round(float(roi_w), 4)
+        return [], meta
+
+    starts = [float(band[0]) for band in normalized]
+    gaps = [starts[idx + 1] - starts[idx] for idx in range(len(starts) - 1)]
+    if gaps:
+        min_gap = 0.08 * roi_w
+        max_gap = 0.40 * roi_w
+        if any(gap < min_gap or gap > max_gap for gap in gaps):
+            meta["reason"] = "band-gap-out-of-range"
+            meta["gaps"] = [round(float(gap), 4) for gap in gaps]
+            return [], meta
+
+    meta.update(
+        {
+            "used": True,
+            "reason": "ok",
+            "bands": [[round(float(a), 4), round(float(b), 4)] for a, b in normalized],
+            "overall_span": round(float(overall_span), 4),
+        }
+    )
+    return normalized, meta
+
+
+def _derive_mcq_center_bands_from_span(
+    left_x: float,
+    right_x: float,
+    mcq_roi: Dict[str, int],
+    block_count: int,
+    choices: int,
+) -> List[Tuple[float, float]]:
+    del mcq_roi
+    count = max(1, int(block_count))
+    choice_count = max(2, int(choices))
+    left = float(left_x)
+    right = float(right_x)
+    if not (math.isfinite(left) and math.isfinite(right)) or right <= left:
+        return []
+
+    raw_band_w = float(right - left) / float(count)
+    if raw_band_w < 24.0:
+        return []
+
+    bands: List[Tuple[float, float]] = []
+    for idx in range(count):
+        raw_left = float(left + idx * raw_band_w)
+        raw_right = float(left + (idx + 1) * raw_band_w)
+        raw_span = max(8.0, float(raw_right - raw_left))
+        band_left = float(raw_left + 0.08 * raw_span)
+        band_right = float(raw_right - 0.04 * raw_span)
+        choice_w = max(4.0, float(band_right - band_left) / float(choice_count))
+        center_left = float(band_left + 0.5 * choice_w)
+        center_right = float(band_left + (float(choice_count) - 0.5) * choice_w)
+        if center_right > center_left:
+            bands.append((center_left, center_right))
+    return bands
+
+
+def _infer_long_form_answer_center_bands(
+    binary_inv,
+    mcq_roi: Dict[str, int],
+    top_center_y: float,
+    line_h: float,
+    block_count: int,
+    choices: int,
+    img_w: int,
+    img_h: int,
+    sample_rows: int = 8,
+) -> Tuple[List[Tuple[float, float]], Dict[str, object]]:
+    meta: Dict[str, object] = {
+        "used": False,
+        "reason": "init",
+        "rows_sampled": 0,
+        "rows_used": 0,
+    }
+    if binary_inv is None or getattr(binary_inv, "size", 0) <= 0:
+        meta["reason"] = "invalid-binary"
+        return [], meta
+
+    count = max(1, int(block_count))
+    choice_count = max(2, int(choices))
+    line = max(6.0, float(line_h))
+    roi_x = float(_safe_int(mcq_roi.get("x"), 0))
+    roi_y = float(_safe_int(mcq_roi.get("y"), 0))
+    roi_w = float(max(1, _safe_int(mcq_roi.get("w"), img_w)))
+    roi_h = float(max(1, _safe_int(mcq_roi.get("h"), img_h)))
+
+    search_pad_left = max(20.0, 0.035 * roi_w)
+    search_pad_right = max(80.0, 0.14 * roi_w)
+    sx1 = int(round(max(0.0, roi_x - search_pad_left)))
+    sx2 = int(round(min(float(img_w), roi_x + roi_w + search_pad_right)))
+    if sx2 <= sx1:
+        meta["reason"] = "invalid-search-x"
+        return [], meta
+
+    row_limit = max(1, min(int(sample_rows), 12))
+    row_bands: List[List[Tuple[float, float]]] = []
+    row_debug: List[Dict[str, object]] = []
+    min_blob_w = max(15.0, 0.42 * line)
+    max_blob_w = max(32.0, 1.55 * line)
+    min_blob_h = max(12.0, 0.36 * line)
+    max_blob_h = max(28.0, 1.35 * line)
+
+    for row_idx in range(row_limit):
+        cy = float(top_center_y + float(row_idx) * line)
+        if cy < (roi_y - line) or cy > (roi_y + roi_h + line):
+            continue
+        y1 = int(round(max(0.0, cy - 0.48 * line)))
+        y2 = int(round(min(float(img_h), cy + 0.48 * line)))
+        if y2 <= y1:
+            continue
+
+        crop = binary_inv[y1:y2, sx1:sx2]
+        if crop is None or crop.size == 0:
+            continue
+        meta["rows_sampled"] = int(meta["rows_sampled"]) + 1
+
+        mask = (crop > 0).astype(np.uint8)
+        num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        centers: List[float] = []
+        for label_idx in range(1, int(num_labels)):
+            bx = int(stats[label_idx, cv2.CC_STAT_LEFT])
+            by = int(stats[label_idx, cv2.CC_STAT_TOP])
+            bw = int(stats[label_idx, cv2.CC_STAT_WIDTH])
+            bh = int(stats[label_idx, cv2.CC_STAT_HEIGHT])
+            area = int(stats[label_idx, cv2.CC_STAT_AREA])
+            if bw < min_blob_w or bw > max_blob_w:
+                continue
+            if bh < min_blob_h or bh > max_blob_h:
+                continue
+            if area < 55 or area > 900:
+                continue
+            fill = float(area) / float(max(1, bw * bh))
+            if fill < 0.18 or fill > 0.92:
+                continue
+            cx = float(sx1 + centroids[label_idx][0])
+            if cx < (roi_x - search_pad_left) or cx > (roi_x + roi_w + search_pad_right):
+                continue
+            centers.append(float(cx))
+
+        centers = sorted(centers)
+        if len(centers) < count * choice_count:
+            row_debug.append({"row": int(row_idx + 1), "centers": [round(float(v), 2) for v in centers], "accepted": False})
+            continue
+
+        diffs = [centers[idx + 1] - centers[idx] for idx in range(len(centers) - 1)]
+        step_candidates = [float(val) for val in diffs if 16.0 <= float(val) <= 42.0]
+        if not step_candidates:
+            row_debug.append({"row": int(row_idx + 1), "centers": [round(float(v), 2) for v in centers], "accepted": False})
+            continue
+        step = float(np.median(step_candidates))
+        split_gap = max(46.0, 1.60 * float(step))
+
+        groups: List[List[float]] = []
+        current = [float(centers[0])]
+        for val in centers[1:]:
+            if float(val) - current[-1] > split_gap:
+                groups.append(current)
+                current = [float(val)]
+            else:
+                current.append(float(val))
+        groups.append(current)
+
+        row_group_bands: List[Tuple[float, float]] = []
+        for group in groups:
+            if len(group) < choice_count:
+                continue
+            if len(group) > choice_count:
+                run = [float(v) for v in group[-choice_count:]]
+                run_diffs = [run[idx + 1] - run[idx] for idx in range(len(run) - 1)]
+                median_run = float(np.median(run_diffs)) if run_diffs else 0.0
+                if 16.0 <= median_run <= 42.0 and float(np.std(run_diffs)) <= 8.0:
+                    row_group_bands.append((float(run[0]), float(run[-1])))
+                    continue
+            best_run: Optional[List[float]] = None
+            best_score = float("inf")
+            for start_idx in range(0, len(group) - choice_count + 1):
+                run = [float(v) for v in group[start_idx : start_idx + choice_count]]
+                run_diffs = [run[idx + 1] - run[idx] for idx in range(len(run) - 1)]
+                if not run_diffs:
+                    continue
+                median_run = float(np.median(run_diffs))
+                if median_run < 16.0 or median_run > 42.0:
+                    continue
+                score = float(np.std(run_diffs)) + abs(median_run - step) * 0.20
+                if score < best_score:
+                    best_score = score
+                    best_run = run
+            if best_run is not None:
+                row_group_bands.append((float(best_run[0]), float(best_run[-1])))
+
+        if len(row_group_bands) >= count:
+            row_bands.append(row_group_bands[:count])
+            row_debug.append(
+                {
+                    "row": int(row_idx + 1),
+                    "centers": [round(float(v), 2) for v in centers],
+                    "bands": [[round(float(a), 2), round(float(b), 2)] for a, b in row_group_bands[:count]],
+                    "accepted": True,
+                }
+            )
+        else:
+            row_debug.append(
+                {
+                    "row": int(row_idx + 1),
+                    "centers": [round(float(v), 2) for v in centers],
+                    "groups": [[round(float(v), 2) for v in group] for group in groups],
+                    "accepted": False,
+                }
+            )
+
+    meta["rows_used"] = int(len(row_bands))
+    meta["row_debug"] = row_debug[:6]
+    if len(row_bands) < max(2, int(math.ceil(0.35 * float(row_limit)))):
+        meta["reason"] = "insufficient-valid-rows"
+        return [], meta
+
+    final_bands: List[Tuple[float, float]] = []
+    for block_idx in range(count):
+        lefts = [float(row[block_idx][0]) for row in row_bands if len(row) > block_idx]
+        rights = [float(row[block_idx][1]) for row in row_bands if len(row) > block_idx]
+        if len(lefts) < 2 or len(rights) < 2:
+            meta["reason"] = "insufficient-block-samples"
+            return [], meta
+        final_bands.append((float(np.median(lefts)), float(np.median(rights))))
+
+    meta.update(
+        {
+            "used": True,
+            "reason": "ok",
+            "bands": [[round(float(a), 4), round(float(b), 4)] for a, b in final_bands],
+        }
+    )
+    return final_bands, meta
+
+
+def _expand_mcq_roi_for_bands(
+    mcq_roi: Dict[str, int],
+    block_bands: Sequence[Tuple[float, float]],
+    img_w: int,
+    img_h: int,
+    line_h: float,
+) -> Tuple[Dict[str, int], Dict[str, object]]:
+    meta: Dict[str, object] = {"used": False, "reason": "no-bands"}
+    if not block_bands:
+        return dict(mcq_roi), meta
+
+    x = _safe_int(mcq_roi.get("x"), 0)
+    y = _safe_int(mcq_roi.get("y"), 0)
+    w = max(1, _safe_int(mcq_roi.get("w"), img_w))
+    h = max(1, _safe_int(mcq_roi.get("h"), img_h))
+    roi_right = int(x + w)
+    min_x = min(float(a) for a, _ in block_bands)
+    max_x = max(float(b) for _, b in block_bands)
+    pad = max(28.0, 1.15 * max(6.0, float(line_h)))
+    new_x = int(round(max(0.0, min(float(x), min_x - pad))))
+    new_right = int(round(min(float(img_w), max(float(roi_right), max_x + pad))))
+    if new_x == x and new_right == roi_right:
+        meta["reason"] = "unchanged"
+        return dict(mcq_roi), meta
+
+    expanded = {
+        "x": int(new_x),
+        "y": int(max(0, min(y, img_h - 1))),
+        "w": int(max(1, new_right - new_x)),
+        "h": int(max(1, min(img_h - int(y), h))),
+    }
+    meta.update(
+        {
+            "used": True,
+            "reason": "expanded",
+            "old_roi": dict(mcq_roi),
+            "new_roi": dict(expanded),
+            "band_min_x": round(float(min_x), 4),
+            "band_max_x": round(float(max_x), 4),
+        }
+    )
+    return expanded, meta
+
+
+def _infer_long_form_row_offsets(
+    binary_inv,
+    mcq_roi: Dict[str, int],
+    block_bands: Sequence[Tuple[float, float]],
+    top_center_y: float,
+    line_h: float,
+    rows_per_block: int,
+    choices: int,
+    img_w: int,
+    img_h: int,
+) -> Tuple[List[int], Dict[str, object]]:
+    meta: Dict[str, object] = {
+        "used": False,
+        "source": "none",
+        "reason": "skipped",
+        "row_y_centers": [],
+        "row_offsets_px": [],
+    }
+    rows = max(1, int(rows_per_block))
+    choice_count = max(2, int(choices))
+    line = max(6.0, float(line_h))
+
+    if rows != 30:
+        meta["reason"] = "unsupported-rows-per-block"
+        return [], meta
+
+    fallback_offsets = [int(round(float(idx // 10) * line)) for idx in range(rows)]
+
+    if binary_inv is None or getattr(binary_inv, "size", 0) <= 0 or not block_bands:
+        meta.update(
+            {
+                "used": True,
+                "source": "fallback-10-10-10",
+                "reason": "missing-binary-or-bands",
+                "row_offsets_px": fallback_offsets,
+            }
+        )
+        return fallback_offsets, meta
+
+    first_band = tuple(block_bands[0])
+    band_left = float(first_band[0])
+    band_right = float(first_band[1])
+    if not (math.isfinite(band_left) and math.isfinite(band_right) and band_right > band_left):
+        meta.update(
+            {
+                "used": True,
+                "source": "fallback-10-10-10",
+                "reason": "invalid-first-band",
+                "row_offsets_px": fallback_offsets,
+            }
+        )
+        return fallback_offsets, meta
+
+    x_pad = max(18.0, 0.70 * line)
+    sx1 = int(round(max(0.0, band_left - x_pad)))
+    sx2 = int(round(min(float(img_w), band_right + x_pad)))
+    roi_y = float(_safe_int(mcq_roi.get("y"), 0))
+    roi_h = float(max(1, _safe_int(mcq_roi.get("h"), img_h)))
+    y_pad = max(18.0, 0.65 * line)
+    sy1 = int(round(max(0.0, roi_y - y_pad)))
+    sy2 = int(round(min(float(img_h), roi_y + roi_h + y_pad)))
+    if sx2 <= sx1 or sy2 <= sy1:
+        meta.update(
+            {
+                "used": True,
+                "source": "fallback-10-10-10",
+                "reason": "invalid-search-window",
+                "row_offsets_px": fallback_offsets,
+            }
+        )
+        return fallback_offsets, meta
+
+    crop = binary_inv[sy1:sy2, sx1:sx2]
+    if crop is None or crop.size == 0:
+        meta.update(
+            {
+                "used": True,
+                "source": "fallback-10-10-10",
+                "reason": "empty-search-window",
+                "row_offsets_px": fallback_offsets,
+            }
+        )
+        return fallback_offsets, meta
+
+    mask = (crop > 0).astype(np.uint8)
+    num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    min_blob_w = max(14.0, 0.40 * line)
+    max_blob_w = max(34.0, 1.60 * line)
+    min_blob_h = max(10.0, 0.34 * line)
+    max_blob_h = max(30.0, 1.40 * line)
+    points: List[Tuple[float, float]] = []
+    for label_idx in range(1, int(num_labels)):
+        bw = int(stats[label_idx, cv2.CC_STAT_WIDTH])
+        bh = int(stats[label_idx, cv2.CC_STAT_HEIGHT])
+        area = int(stats[label_idx, cv2.CC_STAT_AREA])
+        if bw < min_blob_w or bw > max_blob_w:
+            continue
+        if bh < min_blob_h or bh > max_blob_h:
+            continue
+        if area < 45 or area > 900:
+            continue
+        fill = float(area) / float(max(1, bw * bh))
+        if fill < 0.16 or fill > 0.94:
+            continue
+        cx = float(sx1 + centroids[label_idx][0])
+        cy = float(sy1 + centroids[label_idx][1])
+        if cx < (band_left - x_pad) or cx > (band_right + x_pad):
+            continue
+        points.append((float(cx), float(cy)))
+
+    points = sorted(points, key=lambda pt: float(pt[1]))
+    clusters: List[List[Tuple[float, float]]] = []
+    y_tol = max(7.0, 0.34 * line)
+    for pt in points:
+        if not clusters or abs(float(pt[1]) - float(np.median([p[1] for p in clusters[-1]]))) > y_tol:
+            clusters.append([pt])
+        else:
+            clusters[-1].append(pt)
+
+    row_centers: List[float] = []
+    row_debug: List[Dict[str, object]] = []
+    for cluster in clusters:
+        xs = sorted(float(pt[0]) for pt in cluster)
+        ys = [float(pt[1]) for pt in cluster]
+        accepted = len(cluster) >= max(3, choice_count - 1)
+        if accepted:
+            row_centers.append(float(np.median(ys)))
+        if len(row_debug) < 40:
+            row_debug.append(
+                {
+                    "y": round(float(np.median(ys)), 4),
+                    "count": int(len(cluster)),
+                    "xs": [round(float(x), 2) for x in xs],
+                    "accepted": bool(accepted),
+                }
+            )
+
+    if len(row_centers) >= rows:
+        row_centers = row_centers[:rows]
+        offsets = [
+            int(round(float(row_centers[idx]) - float(top_center_y + idx * line)))
+            for idx in range(rows)
+        ]
+        meta.update(
+            {
+                "used": True,
+                "source": "detected-bubbles",
+                "reason": "ok",
+                "row_y_centers": [round(float(y), 4) for y in row_centers],
+                "row_offsets_px": offsets,
+                "row_debug": row_debug,
+            }
+        )
+        return offsets, meta
+
+    meta.update(
+        {
+            "used": True,
+            "source": "fallback-10-10-10",
+            "reason": "insufficient-detected-rows",
+            "detected_rows": int(len(row_centers)),
+            "row_y_centers": [round(float(y), 4) for y in row_centers],
+            "row_offsets_px": fallback_offsets,
+            "row_debug": row_debug,
+        }
+    )
+    return fallback_offsets, meta
+
+
 def _parse_numeric_value(value: str, digits: int) -> Optional[List[int]]:
     text = str(value or "").strip()
     if len(text) != int(max(1, digits)):
@@ -472,6 +1007,7 @@ def process_omr_exam(
     crop_bl_x=None,
     crop_bl_y=None,
     profile_sid_roi=None,
+    profile_sid_roi_lock=False,
     profile_mcq_roi=None,
     profile_exam_code_roi=None,
     profile_sid_row_offsets=None,
@@ -590,6 +1126,12 @@ def process_omr_exam(
                 warning_codes.append("MCQ_BLOCKS_INFERRED")
                 warnings.append(f"Tu dong suy luan so khoi MCQ = {block_count} (rows_per_block={rows_per_block}) tu marker fiducial.")
 
+        long_form_mode = bool(rows_per_block >= 25 or block_count >= 4)
+        if long_form_mode and sid_roi_cfg is not None and not bool(profile_sid_roi_lock):
+            sid_roi_cfg = None
+            warning_codes.append("SID_PROFILE_ROI_IGNORED_LONG_FORM")
+            warnings.append("Long-form: bo qua ROI SID trong profile de suy luan theo marker neo.")
+
         anchors, anchor_fallback_used = _resolve_coordinate_anchors(
             WIDTH_IMG,
             HEIGHT_IMG,
@@ -619,24 +1161,12 @@ def process_omr_exam(
         sid_roi = roi_boxes["sid"]
         code_roi = roi_boxes["code"]
         mcq_roi = roi_boxes["mcq"]
-        long_form_mode = bool(rows_per_block >= 25 or block_count >= 4)
 
-        if long_form_mode and sid_roi_cfg is None:
-            # Long forms are more sensitive to SID bottom overflow; keep ROI slightly tighter.
-            # Only shrink if the ROI extends significantly beyond the bottom anchor marker.
-            # Use 1.5% shrink (instead of 3.5%) to avoid cutting off the last digit row when
-            # the ROI height is already tightly fit to the anchor span.
-            sid_shrink_px = int(round(float(sid_roi["h"]) * 0.015))
-            if sid_shrink_px >= 6:
-                tuned_h = int(max(120, int(sid_roi["h"]) - sid_shrink_px))
-                tuned_h = int(min(tuned_h, HEIGHT_IMG - int(sid_roi["y"])))
-                if tuned_h < int(sid_roi["h"]):
-                    sid_roi = dict(sid_roi)
-                    sid_roi["h"] = int(tuned_h)
-                    warning_codes.append("SID_LONG_FORM_HEIGHT_TUNED")
-                    warnings.append("Long-form: tinh chinh chieu cao ROI SID de giam anh huong chan nhieu.")
+        if sid_roi_cfg is None:
+            warning_codes.append("SID_AUTO_ROI_INSET_APPLIED")
+            warnings.append("Tu dong thu hep ROI SID vao ben trong anchor tren/duoi va hai canh ben.")
 
-        mcq_block_bands: List[Tuple[float, float]] = []
+        mcq_block_bands_raw: List[Tuple[float, float]] = []
         if isinstance(geom_bands, (list, tuple)):
             for item in list(geom_bands):
                 if not isinstance(item, dict):
@@ -645,17 +1175,18 @@ def process_omr_exam(
                 x2 = _safe_float(item.get("x_max"), -1.0)
                 if x2 <= x1:
                     continue
-                mcq_block_bands.append((float(x1), float(x2)))
-        if mcq_block_bands and len(mcq_block_bands) >= block_count:
-            mcq_block_bands = sorted(mcq_block_bands, key=lambda band: float(band[0]))
-        else:
-            mcq_block_bands = []
-
-        if long_form_mode and mcq_block_bands:
-            # Long forms: marker bands are frequently left-edge anchors, not full bubble spans.
-            mcq_block_bands = []
-            warning_codes.append("MCQ_BLOCK_BANDS_DISABLED_LONG_FORM")
-            warnings.append("Long-form: bo qua block bands marker de tranh lech cot lua chon.")
+                mcq_block_bands_raw.append((float(x1), float(x2)))
+        mcq_block_bands: List[Tuple[float, float]] = list(mcq_block_bands_raw)
+        mcq_block_bands, mcq_block_bands_meta = _validate_mcq_block_bands(
+            mcq_block_bands,
+            mcq_roi,
+            block_count,
+            choices,
+            long_form_mode,
+            source="geometry",
+        )
+        mcq_block_bands_initial_meta = dict(mcq_block_bands_meta)
+        mcq_block_bands_revalidated_after_roi = False
 
         geom_top_center = _safe_float(mcq_geometry.get("top_center_y"), -1.0)
         geom_line_h = _safe_float(mcq_geometry.get("line_h"), -1.0)
@@ -671,9 +1202,19 @@ def process_omr_exam(
                 bottom_padding_px=15,
             )
             if bool(mcq_marker_roi_meta.get("used", False)):
-                mcq_roi = dict(marker_roi)
-                warnings.append("Da dat ROI MCQ theo cac o vuong den cua khung MCQ.")
-                warning_codes.append("MCQ_BLACK_MARKER_ROI_APPLIED")
+                if long_form_mode and _reject_long_form_low_mcq_top(mcq_marker_roi_meta, HEIGHT_IMG):
+                    mcq_marker_roi_meta = {
+                        **mcq_marker_roi_meta,
+                        "used": False,
+                        "rejected": True,
+                        "reason": "long-form-top-fid-too-low",
+                    }
+                    warnings.append("Long-form: bo qua ROI MCQ theo marker do top fiducial thap bat thuong.")
+                    warning_codes.append("MCQ_LONG_FORM_TOP_FID_REJECTED")
+                else:
+                    mcq_roi = dict(marker_roi)
+                    warnings.append("Da dat ROI MCQ theo cac o vuong den cua khung MCQ.")
+                    warning_codes.append("MCQ_BLACK_MARKER_ROI_APPLIED")
 
         mcq_refine_meta: Dict[str, object] = {"used": False, "reason": "skipped"}
         mcq_anchor_height_meta: Dict[str, object] = {"used": False, "reason": "derived-from-mcq-refine"}
@@ -750,6 +1291,7 @@ def process_omr_exam(
             WIDTH_IMG,
             HEIGHT_IMG,
             handwriting_cfg.get("field_rois"),
+            long_form_mode=long_form_mode,
         )
 
         sid_offsets = _parse_sid_row_offsets(profile_sid_row_offsets, student_id_digits)
@@ -912,41 +1454,108 @@ def process_omr_exam(
         geom_right_x = _safe_float(mcq_geometry.get("right_x"), -1.0)
         fid_left_x = _safe_float(mcq_geometry.get("fid_left_x"), -1.0)
         fid_right_x = _safe_float(mcq_geometry.get("fid_right_x"), -1.0)
+        mcq_answer_band_detection_meta: Dict[str, object] = {"used": False, "reason": "skipped"}
+        mcq_roi_expand_meta: Dict[str, object] = {"used": False, "reason": "skipped"}
+        mcq_row_offsets_meta: Dict[str, object] = {"used": False, "source": "none", "reason": "skipped"}
+        if mcq_block_bands_raw:
+            revalidated_bands, revalidated_meta = _validate_mcq_block_bands(
+                mcq_block_bands_raw,
+                mcq_roi,
+                block_count,
+                choices,
+                long_form_mode,
+                source="geometry",
+            )
+            mcq_block_bands_revalidated_after_roi = True
+            if revalidated_bands or not mcq_block_bands:
+                mcq_block_bands = list(revalidated_bands)
+                mcq_block_bands_meta = dict(revalidated_meta)
+        if long_form_mode:
+            detected_bands, mcq_answer_band_detection_meta = _infer_long_form_answer_center_bands(
+                binary_inv,
+                mcq_roi,
+                top_center_y,
+                line_h,
+                block_count,
+                choices,
+                WIDTH_IMG,
+                HEIGHT_IMG,
+            )
+            detected_bands, detected_bands_meta = _validate_mcq_block_bands(
+                detected_bands,
+                mcq_roi,
+                block_count,
+                choices,
+                long_form_mode,
+                source="detected-bubbles",
+            )
+            if detected_bands:
+                mcq_block_bands = list(detected_bands)
+                mcq_block_bands_meta = {
+                    **detected_bands_meta,
+                    "detection": mcq_answer_band_detection_meta,
+                }
+                mcq_roi, mcq_roi_expand_meta = _expand_mcq_roi_for_bands(
+                    mcq_roi,
+                    mcq_block_bands,
+                    WIDTH_IMG,
+                    HEIGHT_IMG,
+                    line_h,
+                )
+                mcq_block_bands, mcq_block_bands_meta = _validate_mcq_block_bands(
+                    mcq_block_bands,
+                    mcq_roi,
+                    block_count,
+                    choices,
+                    long_form_mode,
+                    source="detected-bubbles",
+                )
+                if mcq_block_bands:
+                    mcq_block_bands_meta = {
+                        **mcq_block_bands_meta,
+                        "detection": mcq_answer_band_detection_meta,
+                        "roi_expand": mcq_roi_expand_meta,
+                    }
+                    warning_codes.append("MCQ_LONG_FORM_BUBBLE_BANDS_DETECTED")
+                    warnings.append("Long-form: detect truc tiep cot dap an MCQ tu bubble centers.")
+                    if bool(mcq_roi_expand_meta.get("used", False)):
+                        warning_codes.append("MCQ_LONG_FORM_ROI_EXPANDED_FOR_BANDS")
+                        warnings.append("Long-form: mo rong ROI MCQ de bao tron block dap an cuoi.")
+        mcq_decode_x_source = "anchor-grid"
         if mcq_block_bands:
             band_left_x = float(mcq_block_bands[0][0])
             band_right_x = float(mcq_block_bands[min(len(mcq_block_bands), block_count) - 1][1])
-            band_span_x = float(max(0.0, band_right_x - band_left_x))
-            min_band_cover = 0.78 if long_form_mode else 0.60
-            if band_span_x >= (min_band_cover * float(mcq_roi["w"])):
-                anchor_left_x = band_left_x
-                anchor_right_x = band_right_x
-            else:
-                warnings.append("Bo qua block bands do span qua hep so voi ROI MCQ hien tai.")
-                warning_codes.append("MCQ_BLOCK_BANDS_REJECTED")
+            anchor_left_x = band_left_x
+            anchor_right_x = band_right_x
+            mcq_decode_x_source = str(mcq_block_bands_meta.get("source") or "block-bands")
         elif long_form_mode:
             roi_w = float(mcq_roi["w"])
-            x_left_candidates = []
-            x_right_candidates = []
-            if geom_right_x - geom_left_x >= roi_w * 0.45:
-                x_left_candidates.append(float(geom_left_x))
-                x_right_candidates.append(float(geom_right_x))
-            if fid_right_x - fid_left_x >= roi_w * 0.35:
-                x_left_candidates.append(float(fid_left_x))
-                x_right_candidates.append(float(fid_right_x))
-            if x_left_candidates and x_right_candidates:
-                anchor_left_x = float(min(x_left_candidates))
-                anchor_right_x = float(max(x_right_candidates))
+            if geom_right_x - geom_left_x >= max(120.0, roi_w * 0.45):
+                anchor_left_x = float(geom_left_x)
+                if fid_left_x > 0.0 and fid_left_x < anchor_left_x and (anchor_left_x - fid_left_x) <= max(80.0, 0.12 * float(WIDTH_IMG)):
+                    anchor_left_x = float(fid_left_x)
+                anchor_right_x = float(geom_right_x)
+                if fid_right_x > anchor_right_x and (fid_right_x - anchor_right_x) <= max(35.0, 0.04 * float(WIDTH_IMG)):
+                    anchor_right_x = float(fid_right_x)
+                mcq_decode_x_source = "bubble-span-long-form"
+            elif fid_right_x - fid_left_x >= max(120.0, roi_w * 0.35):
+                anchor_left_x = float(fid_left_x)
+                anchor_right_x = float(fid_right_x)
+                mcq_decode_x_source = "fid-span-long-form"
             else:
                 anchor_left_x = float(mcq_roi["x"] + 0.06 * roi_w)
                 anchor_right_x = float(mcq_roi["x"] + 0.94 * roi_w)
+                mcq_decode_x_source = "roi-fallback-long-form"
                 warning_codes.append("MCQ_LONG_FORM_X_FALLBACK")
                 warnings.append("Long-form: khong du local marker X hop le, fallback sang pham vi ROI rong theo tung block.")
         elif geom_right_x - geom_left_x >= float(mcq_roi["w"]) * 0.45:
             anchor_left_x = float(geom_left_x)
             anchor_right_x = float(geom_right_x)
+            mcq_decode_x_source = "bubble-span"
         elif fid_right_x - fid_left_x >= float(mcq_roi["w"]) * 0.45:
             anchor_left_x = float(fid_left_x)
             anchor_right_x = float(fid_right_x)
+            mcq_decode_x_source = "fid-span"
 
         anchor_left_x = max(float(mcq_roi["x"]), float(anchor_left_x))
         anchor_right_x = min(float(mcq_roi["x"] + mcq_roi["w"]), float(anchor_right_x))
@@ -954,6 +1563,52 @@ def process_omr_exam(
         if span_x < (0.55 * float(mcq_roi["w"])) or span_x > (1.02 * float(mcq_roi["w"])):
             anchor_left_x = float(mcq_roi["x"] + 0.06 * mcq_roi["w"])
             anchor_right_x = float(mcq_roi["x"] + 0.94 * mcq_roi["w"])
+            mcq_decode_x_source = "roi-guard-fallback"
+
+        if long_form_mode and not mcq_block_bands:
+            derived_bands = _derive_mcq_center_bands_from_span(
+                anchor_left_x,
+                anchor_right_x,
+                mcq_roi,
+                block_count,
+                choices,
+            )
+            mcq_block_bands, mcq_block_bands_meta = _validate_mcq_block_bands(
+                derived_bands,
+                mcq_roi,
+                block_count,
+                choices,
+                long_form_mode,
+                source=f"derived-{mcq_decode_x_source}",
+            )
+            if mcq_block_bands:
+                warning_codes.append("MCQ_LONG_FORM_BLOCK_BANDS_DERIVED")
+                warnings.append("Long-form: dung block bands suy luan tu span MCQ da validate de decode tung cot.")
+            else:
+                warnings.append("Long-form: khong tao duoc block bands hop le, tiep tuc decode bang span MCQ.")
+
+        if long_form_mode and rows_per_block == 30:
+            row_offsets_px, mcq_row_offsets_meta = _infer_long_form_row_offsets(
+                binary_inv,
+                mcq_roi,
+                mcq_block_bands,
+                top_center_y,
+                line_h,
+                rows_per_block,
+                choices,
+                WIDTH_IMG,
+                HEIGHT_IMG,
+            )
+            if row_offsets_px:
+                mcq_cfg = dict(mcq_cfg)
+                mcq_cfg["row_offsets_px"] = list(row_offsets_px)
+                warning_codes.append("MCQ_LONG_FORM_ROW_OFFSETS_APPLIED")
+                if str(mcq_row_offsets_meta.get("source") or "") == "detected-bubbles":
+                    warning_codes.append("MCQ_LONG_FORM_ROW_OFFSETS_DETECTED")
+                    warnings.append("Long-form: detect truc tiep Y cua 30 dong MCQ va ap dung row offsets.")
+                else:
+                    warning_codes.append("MCQ_LONG_FORM_ROW_OFFSETS_FALLBACK")
+                    warnings.append("Long-form: ap dung row offsets 10-10-10 de bu khoang anchor giua block.")
 
         mcq_result = _decode_mcq_with_map(
             gray_norm,
@@ -971,6 +1626,7 @@ def process_omr_exam(
             top_shift_px=0.0,
             block_bands=mcq_block_bands,
         )
+        short_form_bands_locked = bool((not long_form_mode) and mcq_block_bands and bool(mcq_marker_roi_meta.get("used", False)))
 
         mcq_map_search_meta: Dict[str, object] = {
             "used": False,
@@ -982,7 +1638,7 @@ def process_omr_exam(
         # This keeps ownership in MCQ module while avoiding hardcoded service-side ROI rewrites.
         initial_uncertain = int(len(list(mcq_result.get("uncertain_questions") or [])))
         search_uncertain_gate = max(4, int(round(0.60 * float(max(1, questions)))))
-        if (not mcq_rescue_disabled) and initial_uncertain >= search_uncertain_gate:
+        if (not mcq_rescue_disabled) and (not short_form_bands_locked) and initial_uncertain >= search_uncertain_gate:
             mcq_map_search_meta = {
                 "used": False,
                 "reason": "no-better-candidate",
@@ -1095,6 +1751,13 @@ def process_omr_exam(
                     "initial_double_mark": int(baseline_rank[1]),
                     "final_double_mark": int(best_rank[1]),
                 }
+        elif short_form_bands_locked:
+            mcq_map_search_meta = {
+                "used": False,
+                "reason": "locked-by-short-form-block-bands",
+                "initial_uncertain": int(initial_uncertain),
+                "gate": int(search_uncertain_gate),
+            }
         elif mcq_rescue_disabled:
             rescue_reason = "disabled-by-profile" if bool(profile_disable_mcq_rescue) else "disabled-by-long-form"
             mcq_map_search_meta = {
@@ -1264,6 +1927,9 @@ def process_omr_exam(
             score,
             graded_questions,
             handwriting_rois,
+            answer_compare,
+            sid_result.get("selected_cells") or [],
+            code_result.get("selected_cells") or [],
         )
 
         result_path = os.path.join(output_folder, result_name)
@@ -1294,6 +1960,18 @@ def process_omr_exam(
                 "mcq_refine": mcq_refine_meta,
                 "mcq_anchor_height": mcq_anchor_height_meta,
                 "inferred_block_count": int(inferred_block_count),
+                "decode_x_source": str(mcq_decode_x_source),
+                "long_form_block_bands_used": bool(long_form_mode and mcq_block_bands),
+                "block_bands": [[round(float(a), 4), round(float(b), 4)] for a, b in mcq_block_bands],
+                "block_bands_initial_meta": mcq_block_bands_initial_meta,
+                "block_bands_meta": mcq_block_bands_meta,
+                "block_bands_final_meta": mcq_block_bands_meta,
+                "block_bands_revalidated_after_roi": bool(mcq_block_bands_revalidated_after_roi),
+                "answer_band_detection": mcq_answer_band_detection_meta,
+                "mcq_roi_expand": mcq_roi_expand_meta,
+                "long_form_row_offsets_used": bool(mcq_row_offsets_meta.get("used", False)),
+                "row_offsets_source": str(mcq_row_offsets_meta.get("source") or "none"),
+                "row_offsets_meta": mcq_row_offsets_meta,
                 "line_height_px": round(float(line_h), 4),
                 "drift_suspected": bool(drift_suspected),
                 "auto_expand_upward": bool(auto_expand),
@@ -1437,6 +2115,14 @@ def process_omr_exam(
                 "coordinate_mapping_mcq_q1_y": round(float(top_center_y), 4),
                 "coordinate_mapping_mcq_left_x": round(float(anchor_left_x), 4),
                 "coordinate_mapping_mcq_right_x": round(float(anchor_right_x), 4),
+                "coordinate_mapping_mcq_decode_x_source": str(mcq_decode_x_source),
+                "coordinate_mapping_mcq_long_form_block_bands_used": bool(long_form_mode and mcq_block_bands),
+                "coordinate_mapping_mcq_block_bands_rejected_reason": str(mcq_block_bands_meta.get("reason") or ""),
+                "coordinate_mapping_mcq_block_bands_revalidated_after_roi": bool(mcq_block_bands_revalidated_after_roi),
+                "coordinate_mapping_mcq_answer_band_detection_used": bool(mcq_answer_band_detection_meta.get("used", False)),
+                "coordinate_mapping_mcq_roi_expanded_for_bands": bool(mcq_roi_expand_meta.get("used", False)),
+                "coordinate_mapping_mcq_long_form_row_offsets_used": bool(mcq_row_offsets_meta.get("used", False)),
+                "coordinate_mapping_mcq_row_offsets_source": str(mcq_row_offsets_meta.get("source") or "none"),
                 "coordinate_mapping_mcq_double_mark_count": int(len(double_mark_questions)),
             },
             "sid_layout": {"digits": int(student_id_digits), "rows": 10},

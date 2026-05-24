@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { API_CONFIG } from "../../../config/api";
 import ViewImageModal from "../../../components/ViewImageModal";
+import { getAuthUid } from "../../../utils/authStorage";
 import ExportPanel from "../components/ExportPanel";
 import StatsPanel from "../components/StatsPanel";
 import "../styles/OmrMobileApp.css";
@@ -45,7 +46,7 @@ import {
 export default function MultichoicePage() {
   const navigate = useNavigate();
   const { testId: routeTestIdRaw, recordId: routeRecordIdRaw } = useParams();
-  const uid = Number(localStorage.getItem("uid") || "0");
+  const uid = getAuthUid();
 
   const routeTestId = useMemo(() => {
     if (!routeTestIdRaw) return null;
@@ -510,6 +511,8 @@ export default function MultichoicePage() {
     setNavTab("home");
     setErrorMessage("");
     setSuccessMessage("");
+    setResultImageUrl(null);
+    setViewImage(null);
     setSelectedGradeRecordId(null);
     clearPickedMedia();
     stopCamera();
@@ -939,6 +942,7 @@ export default function MultichoicePage() {
             newRecords
           ),
         });
+        clearPickedMedia();
         setDetailTab("stats");
         setSuccessMessage(`Đã chấm batch ${successCount}/${pickedFiles.length} ảnh.`);
       } else {
@@ -989,6 +993,7 @@ export default function MultichoicePage() {
           gradedCount: Number(selectedTest.gradedCount || 0) + 1,
           lastResult: mergeLastResultWithRecords(selectedTest.lastResult, data, [singleRecord]),
         });
+        clearPickedMedia();
         setDetailTab("stats");
         setSuccessMessage("Chấm xong. Đã chuyển sang tab Thống kê.");
       }
@@ -1013,7 +1018,6 @@ export default function MultichoicePage() {
         handwritingOverlayRois={handwritingOverlayRois}
         onOpenRecordDetail={openRecordDetail}
         onDeleteGradeRecord={deleteGradeRecord}
-        onViewImage={setViewImage}
       />
     );
   }
@@ -1029,6 +1033,8 @@ export default function MultichoicePage() {
               className="header-back-btn tap-feedback"
               onClick={() => {
                 setSelectedGradeRecordId(null);
+                setResultImageUrl(null);
+                setViewImage(null);
                 stopCamera();
                 navigate("/multichoice");
               }}
@@ -1041,6 +1047,9 @@ export default function MultichoicePage() {
               onClick={() => {
                 setDetailTestId(null);
                 setNavTab("home");
+                setResultImageUrl(null);
+                setViewImage(null);
+                clearPickedMedia();
                 stopCamera();
                 navigate("/multichoice");
               }}
@@ -1418,6 +1427,9 @@ export default function MultichoicePage() {
           onClick={() => {
             setDetailTestId(null);
             setNavTab("home");
+            setResultImageUrl(null);
+            setViewImage(null);
+            clearPickedMedia();
             stopCamera();
             navigate("/multichoice");
           }}
@@ -1429,6 +1441,9 @@ export default function MultichoicePage() {
           onClick={() => {
             setDetailTestId(null);
             setNavTab("templates");
+            setResultImageUrl(null);
+            setViewImage(null);
+            clearPickedMedia();
             stopCamera();
             navigate("/multichoice");
           }}

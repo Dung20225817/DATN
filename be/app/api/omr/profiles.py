@@ -70,6 +70,9 @@ async def save_form_profile(payload: Dict[str, Any] = Body(...)):
     parsed_disable_rescue = _sanitize_bool_flag(
         strategy_in.get("disable_mcq_rescue") if "disable_mcq_rescue" in strategy_in else existing_strategy.get("disable_mcq_rescue")
     )
+    parsed_sid_roi_lock = _sanitize_bool_flag(
+        strategy_in.get("sid_roi_lock") if "sid_roi_lock" in strategy_in else existing_strategy.get("sid_roi_lock")
+    )
 
     strategy_payload = {
         "crop_quad": _sanitize_quad(strategy_in.get("crop_quad") if "crop_quad" in strategy_in else existing_strategy.get("crop_quad")),
@@ -83,6 +86,7 @@ async def save_form_profile(payload: Dict[str, Any] = Body(...)):
         "mcq_decode": _sanitize_mcq_decode(strategy_in.get("mcq_decode") if "mcq_decode" in strategy_in else existing_strategy.get("mcq_decode")),
         "threshold_mode": _sanitize_threshold_mode(strategy_in.get("threshold_mode") if "threshold_mode" in strategy_in else existing_strategy.get("threshold_mode")),
         "disable_mcq_rescue": bool(parsed_disable_rescue) if parsed_disable_rescue is not None else False,
+        "sid_roi_lock": bool(parsed_sid_roi_lock) if parsed_sid_roi_lock is not None else False,
     }
     if sheet_aspect_ratio is not None:
         strategy_payload["sheet_aspect_ratio"] = sheet_aspect_ratio

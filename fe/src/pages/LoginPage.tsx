@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./LoginPage.css";
 import { motion } from "framer-motion";
 import { Smartphone, Mail, Lock } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+import GoogleAuthButton from "../components/GoogleAuthButton";
 import { API_CONFIG } from "../config/api";
+import { hasActiveAuthSession, persistAuthUser } from "../utils/authStorage";
+import type { AuthUser } from "../utils/authStorage";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -11,6 +14,17 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (hasActiveAuthSession()) {
+      navigate("/home", { replace: true });
+    }
+  }, [navigate]);
+
+  const completeAuth = (user: AuthUser) => {
+    persistAuthUser(user);
+    navigate("/home");
+  };
 
   const loginRequest = async (email: string, password: string) => {
     try {
@@ -52,14 +66,7 @@ export default function LoginPage() {
       return;
     }
 
-    localStorage.setItem("token", user.token || "");
-    localStorage.setItem("uid", user.uid?.toString() || "");
-    localStorage.setItem("user_name", user.user_name || "");
-    localStorage.setItem("email", user.email || "");
-    localStorage.setItem("phone", user.phone || "");
-    localStorage.setItem("user", JSON.stringify(user));
-
-    navigate("/home");
+    completeAuth(user);
   };
 
   return (
@@ -130,6 +137,17 @@ export default function LoginPage() {
             >
               {isLoading ? "Đang xử lý..." : "Đăng nhập"}
             </button>
+
+            <div className="auth-divider">
+              <span>hoặc</span>
+            </div>
+
+            <GoogleAuthButton
+              disabled={isLoading}
+              text="signin_with"
+              onSuccess={completeAuth}
+              onError={setErrorMessage}
+            />
 
             <p className="login-footer">
               Chưa có tài khoản?{" "}

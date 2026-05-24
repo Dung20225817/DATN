@@ -20,7 +20,6 @@ type StatsPanelProps = {
   handwritingOverlayRois: HandwritingRoiOverlay[];
   onOpenRecordDetail: (record: GradeRecord) => void;
   onDeleteGradeRecord: (recordId: string) => void;
-  onViewImage: (url: string) => void;
 };
 
 type TelemetryState = {
@@ -57,15 +56,12 @@ export default function StatsPanel({
   setStatsFilterMode,
   setStatsFilterValue,
   selectedGradeRecord,
-  handwritingOverlayRois,
   onOpenRecordDetail,
   onDeleteGradeRecord,
-  onViewImage,
 }: StatsPanelProps) {
   const isRouteDetail = selectionMode === "route";
   const telemetryUrl = isRouteDetail ? (selectedGradeRecord?.bubble_confidence_json_url || null) : null;
   const [telemetryState, setTelemetryState] = useState<TelemetryState>({ url: null, status: "error", data: null });
-  const [resultPreviewOpen, setResultPreviewOpen] = useState(false);
 
   useEffect(() => {
     if (!telemetryUrl) return;
@@ -106,16 +102,6 @@ export default function StatsPanel({
     <div className={`stats-result-overlay-wrap ${variant === "large" ? "large" : ""}`}>
       <img src={imageUrl} alt="Ảnh kết quả chấm" />
       {answerOverlayBoxes.map(renderAnswerOverlay)}
-      {handwritingOverlayRois.map(({ key, rect }) => (
-        <span
-          key={`hw_roi_${key}`}
-          className="stats-roi-box handwriting"
-          title="ROI họ và tên"
-          style={toOverlayStyle(rect)}
-        >
-          <small>Họ tên</small>
-        </span>
-      ))}
     </div>
   );
 
@@ -263,26 +249,16 @@ export default function StatsPanel({
             )}
           </div>
 
-          <button
-            type="button"
-            className={`stats-image-card tap-feedback ${selectedGradeRecord.image_url ? "" : "disabled"}`}
-            onClick={() => {
-              if (!selectedGradeRecord.image_url) return;
-              if (isRouteDetail) {
-                setResultPreviewOpen(true);
-              } else {
-                onViewImage(selectedGradeRecord.image_url);
-              }
-            }}
-            disabled={!selectedGradeRecord.image_url}
+          <div
+            className={`stats-image-card ${selectedGradeRecord.image_url ? "" : "disabled"}`}
           >
             {selectedGradeRecord.image_url ? (
               <>
-                {renderResultOverlay(selectedGradeRecord.image_url, "inline")}
+                {renderResultOverlay(selectedGradeRecord.image_url, "large")}
                 <div className="stats-overlay-legend" aria-hidden="true">
                   <span className="legend-item correct">Đúng</span>
                   <span className="legend-item wrong">Sai</span>
-                  <span className="legend-item missing">??p ?n Đúng ch?a t?</span>
+                  <span className="legend-item missing">Đáp án đúng</span>
                   <span className="legend-item no-key">Không có đáp án</span>
                 </div>
                 {telemetryDisplayStatus === "loading" && <div className="stats-overlay-note">Đang tải dữ liệu khoanh đáp án...</div>}
@@ -292,15 +268,7 @@ export default function StatsPanel({
               <div className="stats-image-empty">Không có ảnh kết quả</div>
             )}
             <span>Ảnh kết quả</span>
-          </button>
-
-          {resultPreviewOpen && selectedGradeRecord.image_url && (
-            <div className="view-overlay stats-result-preview-overlay" onClick={() => setResultPreviewOpen(false)}>
-              <div className="stats-result-preview-panel" onClick={(event) => event.stopPropagation()}>
-                {renderResultOverlay(selectedGradeRecord.image_url, "large")}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       )}
     </div>

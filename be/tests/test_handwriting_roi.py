@@ -55,6 +55,32 @@ class HandwritingRoiTests(unittest.TestCase):
             {"x": 0.1, "y": 0.2, "w": 0.34, "h": 0.11},
         )
 
+    def test_backend_infers_short_form_name_roi_when_profile_missing(self):
+        rois = _build_handwriting_rois(
+            anchors={},
+            sid_roi={"x": 568, "y": 63, "w": 200, "h": 316},
+            mcq_roi={"x": 195, "y": 691, "w": 597, "h": 698},
+            img_w=1000,
+            img_h=1400,
+            cfg_field_rois={},
+        )
+
+        self.assertEqual(set(rois.keys()), {"ho_ten"})
+        self.assertEqual(rois["ho_ten"], {"x": 283, "y": 120, "w": 277, "h": 88})
+
+    def test_backend_does_not_infer_short_form_name_roi_for_long_forms(self):
+        rois = _build_handwriting_rois(
+            anchors={},
+            sid_roi={"x": 520, "y": 50, "w": 220, "h": 300},
+            mcq_roi={"x": 160, "y": 690, "w": 780, "h": 700},
+            img_w=1000,
+            img_h=1400,
+            cfg_field_rois={},
+            long_form_mode=True,
+        )
+
+        self.assertEqual(rois, {})
+
 
 if __name__ == "__main__":
     unittest.main()

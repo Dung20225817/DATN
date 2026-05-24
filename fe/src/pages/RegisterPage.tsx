@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./LoginPage.css";
 import { motion } from "framer-motion";
 import { Smartphone, Mail, Lock, User, Phone } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+import GoogleAuthButton from "../components/GoogleAuthButton";
 import { API_CONFIG } from "../config/api";
+import { hasActiveAuthSession, persistAuthUser } from "../utils/authStorage";
+import type { AuthUser } from "../utils/authStorage";
 
 export default function RegisterPage() {
   const [fullname, setFullname] = useState("");
@@ -13,6 +16,17 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (hasActiveAuthSession()) {
+      navigate("/home", { replace: true });
+    }
+  }, [navigate]);
+
+  const completeAuth = (user: AuthUser) => {
+    persistAuthUser(user);
+    navigate("/home");
+  };
 
   const handleRegister = async () => {
     if (!fullname || !email || !phone || !password) {
@@ -41,14 +55,7 @@ export default function RegisterPage() {
         throw new Error(data.detail || "Đăng ký thất bại");
       }
 
-      localStorage.setItem("token", data.token || "");
-      localStorage.setItem("uid", data.uid?.toString() || "");
-      localStorage.setItem("user_name", data.user_name || "");
-      localStorage.setItem("email", data.email || "");
-      localStorage.setItem("phone", data.phone || "");
-      localStorage.setItem("user", JSON.stringify(data));
-
-      navigate("/home");
+      completeAuth(data);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Đăng ký thất bại");
     } finally {
@@ -148,6 +155,17 @@ export default function RegisterPage() {
             >
               {isLoading ? "Đang xử lý..." : "Đăng ký"}
             </button>
+
+            <div className="auth-divider">
+              <span>hoặc</span>
+            </div>
+
+            <GoogleAuthButton
+              disabled={isLoading}
+              text="signup_with"
+              onSuccess={completeAuth}
+              onError={setErrorMessage}
+            />
 
             <p className="login-footer">
               <Link to="/login" className="register-link">

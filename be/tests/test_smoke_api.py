@@ -1,7 +1,9 @@
 import os
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,7 @@ class ApiSmokeTests(unittest.TestCase):
         cls._tmpdir = tempfile.TemporaryDirectory()
         sqlite_path = Path(cls._tmpdir.name) / "smoke.sqlite3"
         os.environ["DATABASE_URL"] = f"sqlite:///{sqlite_path.as_posix()}"
+        os.environ["GOOGLE_CLIENT_ID"] = "smoke-google-client"
 
         from main import app  # noqa: WPS433 - env must be configured before app import
 
@@ -34,6 +37,7 @@ class ApiSmokeTests(unittest.TestCase):
         expected_paths = {
             "/api/login",
             "/api/register",
+            "/api/auth/google",
             "/api/omr/form-profiles",
             "/api/omr/form-samples",
             "/api/omr/assignments",
@@ -46,11 +50,12 @@ class ApiSmokeTests(unittest.TestCase):
         self.assertTrue(expected_paths.issubset(paths))
 
     def test_auth_and_assignment_crud(self):
+        email = f"smoke-{uuid.uuid4().hex}@example.com"
         register = self.client.post(
             "/api/register",
             json={
                 "user_name": "Smoke Test",
-                "email": "smoke@example.com",
+                "email": email,
                 "phone": "0123456789",
                 "password": "secret",
             },
@@ -60,7 +65,7 @@ class ApiSmokeTests(unittest.TestCase):
 
         login = self.client.post(
             "/api/login",
-            json={"email": "smoke@example.com", "password": "secret"},
+            json={"email": email, "password": "secret"},
         )
         self.assertEqual(login.status_code, 200)
         self.assertEqual(login.json()["uid"], uid)
@@ -99,6 +104,34 @@ class ApiSmokeTests(unittest.TestCase):
         listed_after_delete = self.client.get(f"/api/omr/assignments/{uid}")
         self.assertEqual(listed_after_delete.status_code, 200)
         self.assertEqual(listed_after_delete.json()["assignments"], [])
+
+    def test_google_auth_registers_and_reuses_user(self):
+        response_mock = Mock()
+        response_mock.status_code = 200
+        response_mock.json.return_value = {
+            "aud": "smoke-google-client",
+            "email": "google-smoke@example.com",
+            "email_verified": "true",
+            "name": "Google Smoke",
+        }
+
+        with patch("app.api.auth.requests.get", return_value=response_mock):
+            created = self.client.post(
+                "/api/auth/google",
+                json={"credential": "google-id-token"},
+            )
+            self.assertEqual(created.status_code, 200)
+            payload = created.json()
+            self.assertEqual(payload["email"], "google-smoke@example.com")
+            self.assertEqual(payload["user_name"], "Google Smoke")
+            uid = payload["uid"]
+
+            reused = self.client.post(
+                "/api/auth/google",
+                json={"credential": "google-id-token"},
+            )
+            self.assertEqual(reused.status_code, 200)
+            self.assertEqual(reused.json()["uid"], uid)
 
     def test_profile_listing_endpoints(self):
         profiles = self.client.get("/api/omr/form-profiles")

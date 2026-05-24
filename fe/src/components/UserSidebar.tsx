@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import "./UserSidebar.css";
+import { clearAuthSession, getAuthUser } from "../utils/authStorage";
 
 interface UserSidebarProps {
     isOpen: boolean;
@@ -19,15 +20,7 @@ export default function UserSidebar({ isOpen, onClose }: UserSidebarProps) {
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
-        const userStr = localStorage.getItem("user");
-        if (userStr) {
-            try {
-                const userObj = JSON.parse(userStr);
-                setUser(userObj);
-            } catch (err) {
-                console.error("Error parsing user from localStorage:", err);
-            }
-        }
+        setUser(getAuthUser() as User | null);
     }, []);
 
     const handleSignOut = async () => {
@@ -37,13 +30,7 @@ export default function UserSidebar({ isOpen, onClose }: UserSidebarProps) {
         } catch (err) {
             console.error("Logout error:", err);
         } finally {
-            // Clear localStorage regardless of API success
-            localStorage.removeItem("token");
-            localStorage.removeItem("uid");
-            localStorage.removeItem("user_name");
-            localStorage.removeItem("email");
-            localStorage.removeItem("phone");
-            localStorage.removeItem("user");
+            clearAuthSession();
             
             setIsLoading(false);
             window.location.href = "/";

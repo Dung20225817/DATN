@@ -12,6 +12,8 @@ const API_BASE_URL = import.meta.env.DEV
   // In production behind reverse proxy (Nginx/Caddy), default to same-origin.
   : (envApiBaseUrl || "");
 
+export const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").trim();
+
 export const API_CONFIG = {
   BASE_URL: API_BASE_URL,
   
@@ -19,6 +21,7 @@ export const API_CONFIG = {
   AUTH: {
     LOGIN: `${API_BASE_URL}/api/login`,
     REGISTER: `${API_BASE_URL}/api/register`,
+    GOOGLE: `${API_BASE_URL}/api/auth/google`,
   },
   
   // OMR grading endpoints

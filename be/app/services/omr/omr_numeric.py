@@ -55,6 +55,7 @@ def _decode_numeric_columns(
 
     value_chars: List[str] = []
     confs: List[float] = []
+    selected_cells = []
 
     for c in range(int(digits)):
         col_scores = []
@@ -96,6 +97,20 @@ def _decode_numeric_columns(
             value_chars.append("?")
         else:
             value_chars.append(str(best_rel))
+            selected_src_row = min(max(valid_start + best_rel + int(offsets[c]), 0), total_rows - 1)
+            selected_cells.append(
+                {
+                    "digit_index": int(c),
+                    "selected_digit": int(best_rel),
+                    "cell_box": [
+                        int(round(float(col_edges[c]))),
+                        int(round(float(row_edges[selected_src_row]))),
+                        int(round(float(col_edges[c + 1]))),
+                        int(round(float(row_edges[selected_src_row + 1]))),
+                    ],
+                    "score": round(float(best), 6),
+                }
+            )
 
     value = "".join(value_chars)
     mean_conf = float(np.mean(confs)) if confs else 0.0
@@ -106,4 +121,5 @@ def _decode_numeric_columns(
         "status": status,
         "confidence": round(mean_conf, 4),
         "scores": score_matrix.tolist(),
+        "selected_cells": selected_cells,
     }

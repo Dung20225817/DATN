@@ -286,23 +286,37 @@ def _build_rois_from_anchors(
     if sid_roi_cfg is None:
         sid_top = anchors["sid_top"]
         sid_bottom = anchors["sid_bottom"]
-        sid_span = max(120.0, float(abs(sid_bottom[1] - sid_top[1])))
+        sid_anchor_top_y = float(min(sid_top[1], sid_bottom[1]))
+        sid_anchor_bottom_y = float(max(sid_top[1], sid_bottom[1]))
+        sid_span = max(120.0, float(abs(sid_anchor_bottom_y - sid_anchor_top_y)))
         sid_digit_diam = max(10.0, sid_span / 10.0)
         if long_form_mode:
             sid_w = int(round(img_w * 0.188))
-            sid_h = int(round(max(230.0, sid_span + img_h * 0.010)))
             # The SID anchor marker is at the LEFT edge of the SID panel (not 20px to its left).
             # Use a small inset (+0.7%) to place the ROI just inside the marker boundary.
             sid_x = int(round(sid_top[0] + img_w * 0.007))
-            sid_y = int(round(min(sid_top[1], sid_bottom[1]) - img_h * 0.007))
         else:
             sid_w = int(round(img_w * 0.20))
-            sid_h = int(round(max(220.0, sid_span - img_h * 0.020)))
             sid_x = int(round(sid_top[0] + img_w * 0.004))
-            sid_y = int(round(min(sid_top[1], sid_bottom[1]) + img_h * 0.010))
-
-        sid_bottom_target = float(max(sid_top[1], sid_bottom[1]) + 0.50 * sid_digit_diam)
-        sid_h = max(int(sid_h), int(round(sid_bottom_target - float(sid_y))))
+        if long_form_mode:
+            sid_horizontal_inset = int(round(max(3.0, 0.12 * float(sid_digit_diam))))
+        else:
+            sid_horizontal_inset = int(round(max(7.0, 0.25 * float(sid_digit_diam))))
+        if sid_w - 2 * sid_horizontal_inset >= 120:
+            sid_x += sid_horizontal_inset
+            sid_w -= 2 * sid_horizontal_inset
+        if not long_form_mode:
+            sid_right_inset = int(round(max(4.0, 0.12 * float(sid_digit_diam))))
+            if sid_w - sid_right_inset >= 120:
+                sid_w -= sid_right_inset
+        sid_vertical_inset = max(4.0, 0.18 * float(sid_digit_diam))
+        sid_y = int(round(sid_anchor_top_y + sid_vertical_inset))
+        sid_bottom_inner = float(sid_anchor_bottom_y - sid_vertical_inset)
+        sid_h = int(round(sid_bottom_inner - float(sid_y)))
+        if sid_h < 120:
+            anchor_mid_y = 0.5 * (sid_anchor_top_y + sid_anchor_bottom_y)
+            sid_y = int(round(anchor_mid_y - 60.0))
+            sid_h = 120
 
         sid_x = max(0, min(sid_x, max(0, img_w - sid_w - 1)))
         sid_x, sid_y, sid_w, sid_h = _clip_rect(sid_x, sid_y, sid_w, sid_h, img_w, img_h)

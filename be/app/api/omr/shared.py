@@ -662,6 +662,7 @@ def _build_runtime_config(
         "profile_sid_roi": _sanitize_norm_rect(strategy.get("sid_roi")),
         "profile_mcq_roi": _sanitize_norm_rect(strategy.get("mcq_roi")),
         "profile_exam_code_roi": _sanitize_norm_rect(strategy.get("exam_code_roi")),
+        "profile_sid_roi_lock": bool(_sanitize_bool_flag(strategy.get("sid_roi_lock"))),
         "profile_sid_row_offsets": _sanitize_sid_row_offsets(strategy.get("sid_row_offsets")),
         "profile_disable_mcq_rescue": bool(parsed_disable_rescue) if parsed_disable_rescue is not None else False,
         "profile_mcq_decode": _sanitize_mcq_decode(strategy.get("mcq_decode")),

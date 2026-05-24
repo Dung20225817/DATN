@@ -269,6 +269,73 @@
     0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.35);
+}
+
+.google-auth-container {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.google-auth-container[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.google-auth-button {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.google-auth-button.disabled {
+  opacity: 0.65;
+}
+
+.google-auth-disabled-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: not-allowed;
+}
+
+.google-auth-fallback {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: #f8fafc;
+  color: #64748b;
+  font-weight: 700;
+  cursor: not-allowed;
+}
+
+.google-auth-status {
+  position: absolute;
+  top: calc(100% + 4px);
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.google-auth-status.error {
+  color: #dc2626;
+}
+
 /* Footer */
 .login-footer {
   text-align: center;

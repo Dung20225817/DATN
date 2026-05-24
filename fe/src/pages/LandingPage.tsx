@@ -13,6 +13,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { hasActiveAuthSession } from "../utils/authStorage";
 import "./LandingPage.css";
 
 const benefitItems = [
@@ -67,6 +68,8 @@ const workflowItems = [
 ];
 
 export default function LandingPage() {
+  const signedInTarget = hasActiveAuthSession() ? "/home" : null;
+
   return (
     <div className="landing-page">
       <header className="landing-header" aria-label="Điều hướng VeritaAI">
@@ -81,10 +84,10 @@ export default function LandingPage() {
           <a href="#privacy">Bảo mật</a>
         </nav>
         <div className="landing-actions">
-          <Link to="/login" className="landing-link-button">
+          <Link to={signedInTarget || "/login"} className="landing-link-button">
             Đăng nhập
           </Link>
-          <Link to="/register" className="landing-primary-button">
+          <Link to={signedInTarget || "/register"} className="landing-primary-button">
             Bắt đầu
             <ArrowRight size={18} aria-hidden="true" />
           </Link>
@@ -115,11 +118,11 @@ export default function LandingPage() {
               gọn gàng cho giáo viên và nhà trường.
             </p>
             <div className="landing-hero-actions">
-              <Link to="/register" className="landing-primary-button landing-hero-button">
+              <Link to={signedInTarget || "/register"} className="landing-primary-button landing-hero-button">
                 Dùng thử hệ thống
                 <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              <Link to="/login" className="landing-secondary-button">
+              <Link to={signedInTarget || "/login"} className="landing-secondary-button">
                 Vào trang đăng nhập
               </Link>
             </div>
@@ -262,7 +265,7 @@ export default function LandingPage() {
         <section className="landing-final-cta">
           <h2>Sẵn sàng chấm bài với VeritaAI?</h2>
           <p>Truy cập hệ thống để tạo bài thi, quét phiếu và xuất kết quả cho lớp học.</p>
-          <Link to="/register" className="landing-primary-button">
+          <Link to={signedInTarget || "/register"} className="landing-primary-button">
             Tạo tài khoản
             <ArrowRight size={18} aria-hidden="true" />
           </Link>
