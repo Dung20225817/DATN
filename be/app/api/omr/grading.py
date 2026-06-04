@@ -216,9 +216,20 @@ async def grade_exam(
         _inject_handwriting_crop_urls(result)
         bubble_confidence_json_url = _static_omr_url(result.get("bubble_confidence_json"))
         result["bubble_confidence_json_url"] = bubble_confidence_json_url
+        persisted_omrid = int(omr_test_id) if omr_test_id is not None else (matched_test.omrid if matched_test is not None else None)
+        grade_result_id = _persist_omr_grade_result(
+            db,
+            uid=uid_checked,
+            aid=aid,
+            omrid=persisted_omrid,
+            source=answer_source,
+            file_name=safe_exam_name,
+            result=result,
+        )
         return JSONResponse(content={
             "message": "Chấm điểm thành công",
             "data": result,
+            "grade_result_id": grade_result_id,
             "image_url": _static_omr_url(result.get("result_image")),
             "sid_crop_url": _static_omr_url(result.get("sid_crop_image")),
             "mcq_crop_url": _static_omr_url(result.get("mcq_crop_image")),
@@ -444,11 +455,26 @@ async def grade_exam_batch(
             _inject_handwriting_crop_urls(result)
             bubble_confidence_json_url = _static_omr_url(result.get("bubble_confidence_json"))
             result["bubble_confidence_json_url"] = bubble_confidence_json_url
+            persisted_omrid = None
+            if matched_one and matched_one.get("omrid") is not None:
+                persisted_omrid = int(matched_one["omrid"])
+            elif omr_test_id is not None:
+                persisted_omrid = int(omr_test_id)
+            grade_result_id = _persist_omr_grade_result(
+                db,
+                uid=uid_checked,
+                aid=aid,
+                omrid=persisted_omrid,
+                source=one_answer_source,
+                file_name=safe_exam_name,
+                result=result,
+            )
             results.append(
                 {
                     "file_name": safe_exam_name,
                     "success": True,
                     "data": result,
+                    "grade_result_id": grade_result_id,
                     "image_url": _static_omr_url(result.get("result_image")),
                     "sid_crop_url": _static_omr_url(result.get("sid_crop_image")),
                     "mcq_crop_url": _static_omr_url(result.get("mcq_crop_image")),

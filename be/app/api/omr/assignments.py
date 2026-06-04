@@ -147,6 +147,10 @@ async def delete_assignment(uid: int, aid: int, db: Session = Depends(get_db)):
     if not record:
         raise HTTPException(status_code=404, detail="Không tìm thấy bài thi")
 
+    db.query(OMRGradeResult).filter(
+        OMRGradeResult.uuid == uid,
+        OMRGradeResult.aid == int(aid),
+    ).delete(synchronize_session=False)
     db.delete(record)
     db.commit()
     return JSONResponse(content={"message": "Đã xóa bài thi"})

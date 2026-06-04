@@ -27,7 +27,7 @@ from app.services.omr.answer_keys import (
     parse_answer_key_from_text,
 )
 from app.services.omr.omr_service import process_omr_exam, generate_omr_template, suggest_omr_crop_quad
-from app.db.models.omr import OMRTest, OMRAssignment
+from app.db.models.omr import OMRTest, OMRAssignment, OMRGradeResult
 from app.db.session import get_db
 
 BASE_OMR_DIR = str(OMR_DIR)
@@ -48,11 +48,6 @@ INFO_FIELD_WHITELIST = ["Tên", "Lớp", "Môn thi", "Lớp thi", "Năm học"]
 def _omr_sidecar_path(omrid: int) -> str:
     return os.path.join(BASE_OMR_TEMPLATE_DIR, f"omr_test_{int(omrid)}.json")
 
-def _write_omr_sidecar(omrid: int, payload: dict) -> None:
-    path = _omr_sidecar_path(omrid)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-
 def _read_omr_sidecar(omrid: int) -> dict:
     path = _omr_sidecar_path(omrid)
     if not os.path.exists(path):
@@ -64,22 +59,38 @@ def _read_omr_sidecar(omrid: int) -> dict:
     except Exception:
         return {}
 
-def _delete_omr_sidecar_and_template(omrid: int) -> None:
-    data = _read_omr_sidecar(omrid)
+def _omr_template_metadata(record: OMRTest) -> dict:
+    sidecar = _read_omr_sidecar(record.omrid)
+    info_fields = record.info_fields if isinstance(record.info_fields, list) else sidecar.get("info_fields")
+    return {
+        "template_image": record.template_image or sidecar.get("template_image"),
+        "info_fields": info_fields if isinstance(info_fields, list) else [],
+        "options": record.options if record.options is not None else sidecar.get("options"),
+        "rows_per_block": record.rows_per_block if record.rows_per_block is not None else sidecar.get("rows_per_block"),
+        "student_id_digits": (
+            record.student_id_digits
+            if record.student_id_digits is not None
+            else sidecar.get("student_id_digits")
+        ),
+    }
+
+def _remove_file_quietly(path: Optional[str]) -> None:
+    if not path:
+        return
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+def _delete_omr_sidecar_and_template(omrid: int, metadata: Optional[dict] = None) -> None:
+    data = metadata if isinstance(metadata, dict) else _read_omr_sidecar(omrid)
     image_name = str(data.get("template_image") or "").strip()
     if image_name:
         image_path = os.path.join(BASE_OMR_TEMPLATE_DIR, os.path.basename(image_name))
-        if os.path.exists(image_path):
-            try:
-                os.remove(image_path)
-            except Exception:
-                pass
+        _remove_file_quietly(image_path)
     sidecar = _omr_sidecar_path(omrid)
-    if os.path.exists(sidecar):
-        try:
-            os.remove(sidecar)
-        except Exception:
-            pass
+    _remove_file_quietly(sidecar)
 
 def _normalize_exam_name_key(name: str) -> str:
     value = re.sub(r"\s+", " ", str(name or "").strip())
@@ -104,8 +115,8 @@ def _check_duplicate_template_identity(
     for rec in recs:
         if _normalize_exam_name_key(rec.omr_name) != key_name:
             continue
-        sidecar = _read_omr_sidecar(rec.omrid)
-        stored_sid = sidecar.get("student_id_digits")
+        metadata = _omr_template_metadata(rec)
+        stored_sid = metadata.get("student_id_digits")
         if stored_sid is None:
             raise HTTPException(
                 status_code=400,
@@ -816,6 +827,27 @@ def _serialize_assignment(record: OMRAssignment) -> dict:
         "created_at": record.created_at.isoformat() if record.created_at else None,
     }
 
+def _serialize_grade_result(record: OMRGradeResult) -> dict:
+    payload = deepcopy(record.result_json) if isinstance(record.result_json, dict) else {}
+    _inject_handwriting_crop_urls(payload)
+    return {
+        "grid": record.grid,
+        "aid": record.aid,
+        "uuid": record.uuid,
+        "omrid": record.omrid,
+        "source": record.source,
+        "file_name": record.file_name,
+        "student_id": record.student_id,
+        "exam_code": record.exam_code,
+        "score": record.score,
+        "data": payload,
+        "image_url": _static_omr_url(record.result_image),
+        "sid_crop_url": _static_omr_url(record.sid_crop_image),
+        "mcq_crop_url": _static_omr_url(record.mcq_crop_image),
+        "bubble_confidence_json_url": _static_omr_url(record.bubble_confidence_json),
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+    }
+
 def _resolve_shared_answer_key(
     answers: str,
     answer_key_file: Optional[UploadFile],
@@ -850,6 +882,8 @@ def _resolve_shared_answer_key(
             answer_source = "file"
         except ValueError as ex:
             raise HTTPException(status_code=400, detail=str(ex))
+        finally:
+            _remove_file_quietly(answer_file_path)
     elif answers.strip():
         try:
             # Nhap tay: su dung chuan one-based theo UI (A=1..E=5), backend quy doi ve zero-based.
@@ -872,6 +906,49 @@ def _resolve_shared_answer_key(
         )
 
     return answer_key, answer_source, parsed_questions
+
+def _result_file_name(result: Dict[str, Any], key: str) -> Optional[str]:
+    value = str(result.get(key) or "").strip()
+    if not value:
+        return None
+    return os.path.basename(value)
+
+def _persist_omr_grade_result(
+    db: Session,
+    *,
+    uid: Optional[int],
+    aid: Optional[int],
+    omrid: Optional[int],
+    source: str,
+    file_name: str,
+    result: Dict[str, Any],
+) -> Optional[int]:
+    if uid is None or not isinstance(result, dict):
+        return None
+
+    try:
+        record = OMRGradeResult(
+            uuid=int(uid),
+            aid=int(aid) if aid is not None else None,
+            omrid=int(omrid) if omrid is not None else None,
+            source=str(source or "").strip() or None,
+            file_name=os.path.basename(str(file_name or "").strip()) or None,
+            student_id=str(result.get("student_id") or "").strip() or None,
+            exam_code=str(result.get("exam_code") or "").strip() or None,
+            score=str(result.get("score")).strip() if result.get("score") is not None else None,
+            result_image=_result_file_name(result, "result_image"),
+            sid_crop_image=_result_file_name(result, "sid_crop_image"),
+            mcq_crop_image=_result_file_name(result, "mcq_crop_image"),
+            bubble_confidence_json=_result_file_name(result, "bubble_confidence_json"),
+            result_json=result,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        return int(record.grid)
+    except Exception:
+        db.rollback()
+        return None
 
 def _parse_assignment_answer_token(token: Any, num_choices: int) -> int:
     text = str(token or "").strip()

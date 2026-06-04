@@ -36,8 +36,50 @@ export type ScannerHint = {
   sample_size_norm?: number;
 };
 
+export type RoiRect = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type RoiQuad = {
+  tl: { x: number; y: number };
+  tr: { x: number; y: number };
+  br: { x: number; y: number };
+  bl: { x: number; y: number };
+};
+
+export type HandwritingFieldsStrategy = {
+  enabled?: boolean;
+  save_crops?: boolean;
+  field_rois?: {
+    ho_ten?: RoiRect;
+    ho_ten_1?: RoiRect;
+    ho_ten_2?: RoiRect;
+    [key: string]: RoiRect | undefined;
+  };
+};
+
+export type McqDecodeStrategy = {
+  threshold_mode?: "otsu" | "adaptive";
+  row_offsets_px?: number[];
+  [key: string]: unknown;
+};
+
 export type ScannerStrategy = {
   sheet_aspect_ratio?: number;
+  crop_quad?: RoiQuad | null;
+  sid_roi?: RoiRect | null;
+  mcq_roi?: RoiRect | null;
+  exam_code_roi?: RoiRect | null;
+  handwriting_fields?: HandwritingFieldsStrategy | null;
+  sid_row_offsets?: number[] | null;
+  mcq_decode?: McqDecodeStrategy | null;
+  threshold_mode?: "otsu" | "weighted_adaptive" | "hybrid" | null;
+  disable_mcq_rescue?: boolean;
+  sid_roi_lock?: boolean;
+  page_size_pt?: { width: number; height: number } | null;
   corner_markers?: Partial<Record<CornerKey, MarkerBox>>;
   scanner_hint?: ScannerHint;
 };
@@ -80,13 +122,6 @@ export type OMRResult = {
   bubble_confidence_json?: string;
   ho_ten_crop_url?: string;
   [key: string]: unknown;
-};
-
-export type RoiRect = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
 };
 
 export type HandwritingRoiOverlay = {

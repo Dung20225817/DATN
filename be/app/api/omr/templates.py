@@ -143,21 +143,15 @@ async def save_omr_template(
             omr_code=omr_code,
             omr_quest=omr_quest,
             omr_answer=parsed_answer,
+            template_image=os.path.basename(str(template_image or "")) if template_image else None,
+            info_fields=_parse_info_fields(info_fields),
+            options=int(options) if options is not None else None,
+            rows_per_block=int(rows_per_block) if rows_per_block is not None else None,
+            student_id_digits=sid_digits_checked,
         )
         db.add(test_record)
         db.commit()
         db.refresh(test_record)
-
-        info_list = _parse_info_fields(info_fields)
-        sidecar_payload = {
-            "template_image": os.path.basename(str(template_image or "")) if template_image else None,
-            "info_fields": info_list,
-            "options": int(options) if options is not None else None,
-            "rows_per_block": int(rows_per_block) if rows_per_block is not None else None,
-            "student_id_digits": sid_digits_checked,
-            "saved_at": datetime.utcnow().isoformat(),
-        }
-        _write_omr_sidecar(test_record.omrid, sidecar_payload)
 
         return JSONResponse(
             content={
@@ -168,7 +162,7 @@ async def save_omr_template(
                     "omr_code": test_record.omr_code,
                     "omr_quest": test_record.omr_quest,
                 },
-                "template_url": f"/static/omr_templates/{sidecar_payload['template_image']}" if sidecar_payload.get("template_image") else None,
+                "template_url": f"/static/omr_templates/{test_record.template_image}" if test_record.template_image else None,
             }
         )
     except HTTPException:
@@ -190,8 +184,8 @@ async def list_omr_tests(uid: int, db: Session = Depends(get_db)):
 
     tests = []
     for rec in records:
-        sidecar = _read_omr_sidecar(rec.omrid)
-        template_image = str(sidecar.get("template_image") or "").strip()
+        metadata = _omr_template_metadata(rec)
+        template_image = str(metadata.get("template_image") or "").strip()
         one_based_answers = []
         if isinstance(rec.omr_answer, list):
             for x in rec.omr_answer:
@@ -225,7 +219,12 @@ async def delete_omr_test(uid: int, omrid: int, db: Session = Depends(get_db)):
     if not record:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiếu OMR")
 
+    metadata = _omr_template_metadata(record)
+    _delete_omr_sidecar_and_template(omrid, metadata)
+    db.query(OMRGradeResult).filter(OMRGradeResult.omrid == int(omrid)).update(
+        {OMRGradeResult.omrid: None},
+        synchronize_session=False,
+    )
     db.delete(record)
     db.commit()
-    _delete_omr_sidecar_and_template(omrid)
     return JSONResponse(content={"message": "Đã xóa phiếu OMR"})

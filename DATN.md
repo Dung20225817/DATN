@@ -36,7 +36,7 @@ Hà Nội, ngày ... tháng ... năm 2025
 
 ## TÓM TẮT NỘI DUNG ĐỒ ÁN
 
-Đồ án này trình bày quá trình xây dựng hệ thống web tự động chấm điểm phiếu trả lời trắc nghiệm (OMR) sử dụng kỹ thuật xử lý ảnh kết hợp học sâu...
+Đồ án này trình bày quá trình xây dựng hệ thống web tự động chấm điểm phiếu trả lời trắc nghiệm (OMR) bằng hình ảnh. Phiên bản hiện tại sử dụng pipeline xử lý ảnh có tính xác định dựa trên OpenCV/NumPy, marker định vị, ROI và phân tích mật độ tô; các thư viện học sâu/OCR được giữ trong backend để phục vụ hướng mở rộng nhận dạng chữ viết tay trong các phiên bản sau.
 
 ---
 
@@ -80,12 +80,14 @@ Hà Nội, ngày ... tháng ... năm 2025
     * 4.1.2 Mô tả kiến trúc ba tầng cho hệ thống (23)
     * 4.1.3 Thiết kế tổng quan Frontend (24)
     * 4.1.4 Thiết kế tổng quan Backend (25)
-    * 4.1.5 Biểu đồ package chi tiết (25)
+    * 4.1.5 Cấu trúc mã nguồn hệ thống (25)
+    * 4.1.6 Biểu đồ package chi tiết (25)
   * 4.2 Thiết kế chi tiết (25)
     * 4.2.1 Thiết kế giao diện (25)
     * 4.2.2 Thiết kế lớp (25)
-    * 4.2.3 Biểu đồ trình tự (26)
-    * 4.2.4 Thiết kế cơ sở dữ liệu (27)
+    * 4.2.3 Luồng chấm một phiếu theo mã nguồn (26)
+    * 4.2.4 Luồng chấm hàng loạt theo mã nguồn (26)
+    * 4.2.5 Thiết kế cơ sở dữ liệu (27)
   * 4.3 Xây dựng ứng dụng (28)
     * 4.3.1 Thư viện và công cụ sử dụng (28)
     * 4.3.2 Pipeline xử lý ảnh OMR – 15 bước (30)
@@ -97,13 +99,19 @@ Hà Nội, ngày ... tháng ... năm 2025
 * CHƯƠNG 5. CÁC GIẢI PHÁP VÀ ĐÓNG GÓP NỔI BẬT (32)
   * 5.1 Cơ chế MCQ Map Search Rescue - Tự động hiệu chỉnh lưới câu hỏi (32)
     * 5.1.1 Vấn đề gặp phải (32)
-    * 5.1.2 Giải pháp (32)
+    * 5.1.2 Nguyên nhân kỹ thuật (32)
+    * 5.1.3 Cách sửa trong code (32)
+    * 5.1.4 Kết quả sau khi sửa (33)
   * 5.2 Thuật toán tính điểm bong bóng tổng hợp (33)
     * 5.2.1 Vấn đề gặp phải (33)
-    * 5.2.2 Giải pháp (34)
+    * 5.2.2 Nguyên nhân kỹ thuật (34)
+    * 5.2.3 Cách sửa trong code (34)
+    * 5.2.4 Kết quả sau khi sửa (34)
   * 5.3 Smart Camera Scanner trên trình duyệt (34)
     * 5.3.1 Vấn đề gặp phải (34)
-    * 5.3.2 Giải pháp (35)
+    * 5.3.2 Nguyên nhân kỹ thuật (35)
+    * 5.3.3 Cách sửa trong code (35)
+    * 5.3.4 Kết quả sau khi sửa (36)
 * CHƯƠNG 6. KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN (37)
   * 6.1 Kết luận và hướng phát triển (37)
     * 6.1.1 Kết luận (37)
@@ -124,7 +132,9 @@ Hà Nội, ngày ... tháng ... năm 2025
 * **Hình 4.2:** Thiết kế tổng quan Frontend (Trang 24)
 * **Hình 4.3:** Thiết kế tổng quan Backend (Trang 25)
 * **Hình 4.4:** Sơ đồ ERD (Trang 27)
-* **Hình 4.5:** Biểu đồ package backend và frontend
+* **Hình 4.5a:** Biểu đồ package chi tiết Frontend
+* **Hình 4.5b:** Biểu đồ package chi tiết Backend
+* **Hình 4.5c:** Phụ thuộc giữa Frontend, Backend và Storage
 * **Hình 4.6:** Luồng sequence chấm một phiếu
 * **Hình 4.7:** Luồng sequence chấm hàng loạt
 * **Hình 4.8:** Pipeline xử lý ảnh OMR
@@ -135,13 +145,22 @@ Hà Nội, ngày ... tháng ... năm 2025
 
 ## DANH MỤC BẢNG BIỂU
 * **Bảng 2.6:** Phân rã use case mức chi tiết
-* **Bảng 4.1:** Các màn hình chính và điều kiện hiển thị (Trang 25)
-* **Bảng 4.2:** State machine của MultichoicePage (Trang 26)
-* **Bảng 4.3:** Mô tả các cột cơ sở dữ liệu
-* **Bảng 4.4:** Tham số `mcq_decode` và ý nghĩa
-* **Bảng 4.5:** Thư viện và công cụ sử dụng
-* **Bảng 4.6:** Kết quả kiểm thử chức năng
-* **Bảng 4.7:** Cấu hình triển khai hệ thống
+* **Bảng 4.1:** Vai trò thư mục và module chính
+* **Bảng 4.2:** Input/output các chức năng chính
+* **Bảng 4.3:** API chính của hệ thống
+* **Bảng 4.4:** Các màn hình chính và điều kiện hiển thị
+* **Bảng 4.5:** State machine của MultichoicePage
+* **Bảng 4.6:** Luồng chấm một phiếu theo mã nguồn
+* **Bảng 4.7:** Trường kết quả chấm hàng loạt
+* **Bảng 4.8:** Mô tả các cột cơ sở dữ liệu
+* **Bảng 4.9:** Vai trò bảng dữ liệu trong luồng hoạt động
+* **Bảng 4.10:** Thư viện và công cụ sử dụng
+* **Bảng 4.11:** Pipeline xử lý ảnh theo input/output
+* **Bảng 4.12:** Thành phần Form Profile và ROI
+* **Bảng 4.13:** Tham số `mcq_decode` và ý nghĩa
+* **Bảng 4.14:** Kết quả kiểm thử chức năng
+* **Bảng 4.15:** Cấu hình triển khai hệ thống
+* **Bảng 4.16:** File runtime và storage
 
 ---
 
@@ -176,7 +195,6 @@ Trong phạm vi của đề tài, hệ thống được thiết kế dưới d�
 * **Phần giao diện người dùng (Frontend):** Được phát triển bằng React 19 kết hợp với TypeScript, cung cấp giao diện web động được tối ưu hóa mạnh mẽ cho thiết bị di động (mobile-first). Đặc biệt, tính năng Smart Camera Scanner sử dụng WebRTC Media Devices API cho phép truy cập luồng video và phát hiện phiếu trắc nghiệm theo thời gian thực ngay trên trình duyệt mà không cần cài đặt ứng dụng native.
 * **Phần xử lý logic (Backend):** Sử dụng FastAPI (Python) làm REST API server. Với cơ chế xử lý bất đồng bộ (Asynchronous) dựa trên nền tảng ASGI, FastAPI đảm bảo khả năng đáp ứng đồng thời nhiều yêu cầu xử lý ảnh với độ trễ thấp, đồng thời dễ dàng tích hợp với các thư viện trí tuệ nhân tạo đặc thù của Python.
 * **Thị giác máy tính (Computer Vision):** Thư viện OpenCV đóng vai trò cốt lõi trong việc thực thi pipeline xử lý ảnh 15 bước. Các kỹ thuật như phát hiện cạnh Canny, biến đổi phối cảnh (Perspective Warp) và phân tích mật độ pixel được áp dụng để trích xuất và chuẩn hóa vùng dữ liệu phiếu từ các bức ảnh chụp trong điều kiện ánh sáng thực tế.
-* **Học sâu và OCR mở rộng:** Phiên bản triển khai thực tế giữ PyTorch, EasyOCR, VietOCR và Transformers trong môi trường backend để phục vụ hướng mở rộng nhận dạng chữ viết tay. Luồng chấm điểm chính hiện dùng OpenCV/NumPy, marker, ROI và phân tích density/darkness.
 * **Cơ sở dữ liệu (Database):** Hệ thống sử dụng PostgreSQL làm cơ sở dữ liệu chính thông qua SQLAlchemy ORM. PostgreSQL được lựa chọn nhờ khả năng hỗ trợ lưu trữ và truy vấn dữ liệu kiểu JSON một cách tự nhiên, cực kỳ phù hợp để lưu trữ cấu trúc linh hoạt của các bộ đáp án và lịch sử chấm điểm phức tạp của người dùng.
 
 ### 1.4 Bố cục đồ án
@@ -213,12 +231,10 @@ Bên cạnh đó, các giáo viên tham gia khảo sát cũng phản ánh một 
 
 Biểu đồ use case tổng quan mô tả các tương tác chính giữa người dùng và Hệ thống Quản lý Chấm thi OMR. Hệ thống được thiết kế hướng tới đối tượng sử dụng chính là Giáo viên, người trực tiếp thực hiện các nghiệp vụ tạo lập và quản lý dữ liệu chấm thi. Các chức năng của hệ thống được chia thành 3 nhóm (package) nghiệp vụ cốt lõi như sau:
 * **Nhóm Xác thực (Authentication):** Đảm bảo tính bảo mật và cá nhân hóa dữ liệu cho từng người dùng. Giáo viên tương tác với hệ thống thông qua hai chức năng cơ bản là Đăng ký tài khoản (dành cho người dùng mới) và Đăng nhập (để truy cập vào không gian làm việc cá nhân).
-* **Nhóm Quản lý phiếu OMR (OMR Template Management):** Cung cấp các công cụ để giáo viên quản lý các định dạng phiếu trắc nghiệm. Giáo viên có thể thực hiện các thao tác: Xem danh sách phiếu, Xem ảnh mẫu phiếu và Xóa phiếu OMR. Đối với chức năng Tạo phiếu OMR mới, hệ thống ràng buộc bắt buộc (`<<include>>`) người dùng phải thực hiện thao tác Nhập / Upload đáp án mẫu và Lưu phiếu OMR để hoàn tất quy trình khởi tạo một mẫu phiếu hợp lệ.
-* **Nhóm Quản lý bài thi (Assignment Management):** Tập trung vào việc tổ chức các đợt kiểm tra/thi thực tế dựa trên các mẫu phiếu đã có. Giáo viên có thể Xem danh sách bài thi đã tạo và Xóa bài thi khi không còn nhu cầu sử dụng. Khi thực hiện chức năng Tạo bài thi mới, hệ thống yêu cầu bắt buộc (`<<include>>`) phải Gán profile phiếu mẫu (Form Profile) để xác định định dạng phiếu sẽ dùng cho bài thi đó. Trong quá trình Cập nhật bài thi, giáo viên sẽ thực hiện chức năng đi kèm (`<<include>>`) là Cấu hình bộ đáp án theo mã đề, cho phép một bài thi hỗ trợ nhiều mã đề khác nhau, đáp ứng nhu cầu trộn đề trong thực tế.
+* **Nhóm Quản lý phiếu OMR (OMR Template Management):** Cung cấp các công cụ để giáo viên quản lý các định dạng phiếu trắc nghiệm. Giáo viên có thể thực hiện các thao tác: Xem danh sách phiếu, Xem ảnh mẫu phiếu và Xóa phiếu OMR. Đối với chức năng Tạo phiếu OMR mới, hệ thống ràng buộc bắt buộc (`<<include>>`) người dùng phải thực hiện thao tác Nhập đáp án mẫu và Lưu thông tin phiếu OMR để hoàn tất quy trình khởi tạo một mẫu phiếu hợp lệ.
+* **Nhóm Quản lý bài thi (Assignment Management):** Tập trung vào việc tổ chức dữ liệu phù hợp với các đợt kiểm tra/thi thực tế dựa trên các mẫu phiếu đã có. Giáo viên có thể Xem danh sách bài thi đã tạo và Xóa bài thi khi không còn nhu cầu sử dụng. Khi thực hiện chức năng Tạo bài thi mới, hệ thống yêu cầu bắt buộc (`<<include>>`) phải Gán profile phiếu mẫu (Form Profile) để xác định định dạng phiếu sẽ dùng cho bài thi đó. Trong quá trình Cập nhật bài thi, giáo viên sẽ thực hiện chức năng đi kèm (`<<include>>`) là Cấu hình bộ đáp án theo mã đề, cho phép một bài thi hỗ trợ nhiều mã đề khác nhau, đáp ứng nhu cầu trộn đề trong thực tế.
 
 #### 2.2.2 Biểu đồ use case phân rã Giáo viên
-
-Trong triển khai thực tế, hệ thống không tách riêng hai module giao diện cho Giáo viên và Khách vãng lai. Cả hai trạng thái người dùng đều đi qua cùng ứng dụng React, trong đó màn hình OMR chính được triển khai tại `MultichoicePage.tsx`. Sự khác biệt nằm ở trạng thái đăng nhập: khi `localStorage` có `uid` hợp lệ, người dùng có thể thực hiện các nghiệp vụ quản lý bài thi, đáp án, chấm điểm và lưu kết quả; nếu không có `uid`, các thao tác này bị chặn ở frontend hoặc backend.
 
 **Hình 2.2: Biểu đồ use case phân rã Giáo viên**
 
@@ -279,37 +295,11 @@ graph TD
     Teacher --> D4
 ```
 
-#### 2.2.3 Biểu đồ use case phân rã Khách vãng lai
-
-Khách vãng lai trong hệ thống là người dùng chưa có `uid` trong `localStorage`. Người dùng này vẫn có thể truy cập route `/home` và `/multichoice`, xem tab "Mẫu có sẵn", xem/tải ảnh mẫu phiếu vì endpoint `/api/omr/form-profiles` không yêu cầu `uid`. Tuy nhiên, các nghiệp vụ tạo bài thi, cập nhật đáp án, chấm theo bài thi và lưu lịch sử đều không thực hiện được nếu chưa đăng nhập. Do đó, biểu đồ dưới đây mô tả quyền sử dụng theo trạng thái chưa đăng nhập, không phải một module khách riêng biệt.
-
-**Hình 2.3: Biểu đồ use case phân rã Khách vãng lai**
-
-```mermaid
-graph LR
-    Guest["Khách vãng lai\n(chưa đăng nhập, uid = 0)"]
-    UC1["Đăng nhập"]
-    UC2["Đăng ký tài khoản"]
-    UC3["Truy cập trang OMR"]
-    UC4["Xem kho mẫu phiếu OMR"]
-    UC5["Xem ảnh mẫu phiếu"]
-    UC6["Tải ảnh mẫu phiếu"]
-    UC7["Bị chặn khi tạo/chấm bài"]
-
-    Guest --> UC1
-    Guest --> UC2
-    Guest --> UC3
-    UC3 --> UC4
-    UC4 --> UC5
-    UC4 --> UC6
-    UC3 --> UC7
-```
-
 Như vậy, báo cáo vẫn có thể phân rã use case theo hai tác nhân "Giáo viên" và "Khách vãng lai", nhưng cần hiểu đây là phân rã theo quyền truy cập. Về mặt code, các màn hình này được gộp chung trong cùng route và cùng component; hệ thống không có cơ chế `ProtectedRoute` riêng cho từng tác nhân.
 
-#### 2.2.4 Quy trình nghiệp vụ chấm bài
+#### 2.2.3 Quy trình nghiệp vụ chấm bài
 
-**Hình 2.4: Quy trình nghiệp vụ chấm bài**
+**Hình 2.3: Quy trình nghiệp vụ chấm bài**
 
 ```mermaid
 flowchart TD
@@ -329,15 +319,15 @@ flowchart TD
     L -->|Có| M[MCQ Map Search Rescue]
     L -->|Không| N[Tính điểm]
     M --> N
-    N --> O[Lưu lịch sử chấm trong last_result]
+    N --> O[Lưu kết quả vào omr_grade_result và cập nhật last_result]
     O --> P[Xem thống kê và ảnh overlay]
     P --> Q[Xuất Excel/PDF nếu cần]
     Q --> R([Kết thúc])
 ```
 
-#### 2.2.5 Quy trình nghiệp vụ tổng thể liên kết các use case
+#### 2.2.4 Quy trình nghiệp vụ tổng thể liên kết các use case
 
-**Hình 2.5: Quy trình nghiệp vụ tổng thể liên kết các use case**
+**Hình 2.4: Quy trình nghiệp vụ tổng thể liên kết các use case**
 
 ```mermaid
 flowchart LR
@@ -364,22 +354,22 @@ flowchart LR
     Export --> End([Kết thúc])
 ```
 
-#### 2.2.6 Phân rã use case mức chi tiết
+#### 2.2.5 Phân rã use case mức chi tiết
 
-**Bảng 2.6: Phân rã use case mức chi tiết**
+**Bảng 2.5: Phân rã use case mức chi tiết**
 
 | Mã UC | Use case mức cao | Use case con | Module triển khai | Dữ liệu chính | Kết quả |
 |---|---|---|---|---|---|
 | UC-01 | Xác thực | Đăng nhập | `auth.py`, `LoginPage.tsx` | email, password | Lưu thông tin user vào `localStorage` |
 | UC-02 | Xác thực | Đăng ký | `auth.py`, `RegisterPage.tsx` | user_name, email, phone, password | Bản ghi mới trong `users` |
-| UC-03 | Mẫu phiếu | Xem Form Profile | `profiles.py`, `MultichoicePage.tsx` | profile JSON | Danh sách mẫu phiếu |
+| UC-03 | Mẫu phiếu | Xem Form Profile | `profiles.py`, `MultichoicePage.tsx` | profile JSON| Danh sách mẫu phiếu |
 | UC-04 | Quản lý bài thi | Tạo/sửa/xóa bài thi | `assignments.py` | uid, aid, title | Bản ghi `omr_assignment` |
 | UC-05 | Quản lý đáp án | Cấu hình nhiều mã đề | `answer_sets`, `MultichoicePage.tsx` | code, answers | JSON `answer_sets` |
 | UC-06 | Chụp ảnh | Smart Camera Scanner | `evaluateAlignment()` | video frame, scanner_hint | Ảnh JPEG tự chụp |
 | UC-07 | Chụp ảnh | Upload ảnh | `MultichoicePage.tsx` | File ảnh | FormData gửi backend |
 | UC-08 | Chấm điểm | Chấm 1 phiếu | `grading.py`, `omr_service.py` | image, uid, aid | JSON điểm và ảnh overlay |
 | UC-09 | Chấm điểm | Chấm hàng loạt | `grading.py`, `omr_service.py` | tối đa 50 ảnh | Danh sách kết quả và zip overlay |
-| UC-10 | Kết quả | Lưu lịch sử | `assignments.py` | GradeRecord | Cập nhật `last_result`, `graded_count` |
+| UC-10 | Kết quả | Lưu lịch sử | `grading.py`, `grade_results.py`, `assignments.py` | GradeRecord, `OMRGradeResult` | Thêm bản ghi `omr_grade_result`, cập nhật `last_result`, `graded_count` |
 | UC-11 | Kết quả | Xem/lọc thống kê | `StatsPanel.tsx` | records, keyword | Danh sách bản ghi phù hợp |
 | UC-12 | Kết quả | Xem chi tiết bản ghi | route `/multichoice/record-detail/:testId/:recordId` | recordId | Chi tiết ảnh overlay và câu trả lời |
 | UC-13 | Kết quả | Xuất Excel/PDF | `ExportPanel.tsx` | records | File `.xlsx` hoặc `.pdf` |
@@ -387,7 +377,7 @@ flowchart LR
 ### 2.3 Đặc tả chức năng
 #### 2.3.1 Đặc tả use case Đăng nhập
 * **Tên use case:** Đăng nhập
-* **Tác nhân:** Khách vãng lai
+* **Tác nhân:** Giáo viên
 * **Tiền điều kiện:** Người dùng chưa đăng nhập
 * **Luồng sự kiện chính (Thành công):**
   1. Người dùng: Nhập email và mật khẩu.
@@ -426,32 +416,31 @@ flowchart LR
 | STT | Trường dữ liệu | Bắt buộc | Điều kiện hợp lệ | Ví dụ |
 |---|---|---|---|---|
 | 1 | Tên bài thi | Có | Chuỗi văn bản không được để trống. | Kiểm tra HK1 Toán 12 |
-| 2 | Ngày tổ chức | Không | Định dạng ngày tháng hoặc văn bản tùy ý. | 15/01/2025 |
+| 2 | Ngày tổ chức | Không | Định dạng ngày tháng | 15/01/2025 |
 | 3 | Số câu hỏi | Không | Số nguyên dương (mặc định 40). | 40 |
 | 4 | Tổng điểm | Không | Số nguyên dương (mặc định 10). | 10 |
 | 5 | Profile phiếu mẫu | Không | Mã profile phải tồn tại trong hệ thống. | a4-standard-40 |
 
 #### 2.3.3 Đặc tả use case Chấm điểm
 * **Tên use case:** Chấm điểm phiếu trả lời
-* **Tác nhân:** Giáo viên, Khách vãng lai
+* **Tác nhân:** Giáo viên
 * **Tiền điều kiện:** Người dùng đã ở trang chấm điểm; có ít nhất một bộ đáp án hoặc phiếu OMR đã lưu trong hệ thống.
 * **Luồng sự kiện chính (Chấm đơn lẻ):**
   1. Người dùng: Tải lên ảnh phiếu trả lời (chụp hoặc chọn từ thư viện).
   2. Người dùng: Chọn bài thi hoặc nhập/upload file đáp án.
-  3. Người dùng: (Tùy chọn) Điều chỉnh vùng cắt ảnh theo gợi ý của hệ thống.
-  4. Người dùng: Nhấn “Chấm điểm”.
-  5. Hệ thống: Gọi API `POST /api/omr/grade`, xử lý ảnh qua pipeline OpenCV/NumPy.
-  6. Hệ thống: Trả về ảnh kết quả có overlay màu, mã số sinh viên, điểm số và chi tiết từng câu.
-  7. Người dùng: Xem kết quả, tải ảnh kết quả nếu cần.
+  3. Người dùng: Nhấn “Chấm điểm”.
+  4. Hệ thống: Gọi API `POST /api/omr/grade`, xử lý ảnh qua pipeline OpenCV/NumPy.
+  5. Hệ thống: Trả về ảnh kết quả có overlay màu, mã số sinh viên, điểm số và chi tiết từng câu.
+  6. Người dùng: Xem kết quả, tải ảnh kết quả nếu cần.
 * **Luồng thay thế (Chấm hàng loạt):**
   * 1'. Người dùng: Chọn nhiều ảnh cùng lúc (tối đa 50 ảnh).
-  * 4'. Người dùng: Nhấn “Chấm hàng loạt”.
-  * 5'. Hệ thống: Gọi API `POST /api/omr/grade-batch`, xử lý tuần tự từng ảnh.
-  * 6'. Hệ thống: Trả về danh sách kết quả và file ZIP chứa toàn bộ ảnh chấm.
+  * 3'. Người dùng: Nhấn “Chấm hàng loạt”.
+  * 4'. Hệ thống: Gọi API `POST /api/omr/grade-batch`, xử lý tuần tự từng ảnh.
+  * 5'. Hệ thống: Trả về danh sách kết quả và file ZIP chứa toàn bộ ảnh chấm.
 * **Luồng ngoại lệ:**
-  * 5a. Không nhận diện được phiếu (ảnh mờ, góc lệch quá lớn): hệ thống thông báo lỗi, đề xuất chụp lại.
-  * 5b. Không tìm thấy đề phù hợp (chế độ tự động): hệ thống thông báo “Không tìm thấy đề phù hợp trong DB”.
-  * 5c. Số đáp án không khớp số câu hỏi: hệ thống thông báo lỗi định dạng.
+  * 4a. Không nhận diện được phiếu (ảnh mờ, góc lệch quá lớn): hệ thống thông báo lỗi, đề xuất chụp lại.
+  * 4b. Không tìm thấy đề phù hợp (chế độ tự động): hệ thống thông báo “Không tìm thấy đề phù hợp trong DB”.
+  * 4c. Số đáp án không khớp số câu hỏi: hệ thống thông báo lỗi định dạng.
 * **Hậu điều kiện:** Kết quả chấm điểm được hiển thị; nếu chấm theo bài thi thì `graded_count` được cập nhật.
 
 **Bảng dữ liệu đầu vào cho chức năng Chấm điểm:**
@@ -504,9 +493,11 @@ Hệ thống được thiết kế theo nguyên tắc xác thực tại tầng A
 
 #### 2.4.2 Khả năng lưu trữ
 Hệ thống áp dụng chiến lược lưu trữ phân tán giữa cơ sở dữ liệu quan hệ và hệ thống file để cân bằng hiệu năng và dung lượng.
-* **Cơ sở dữ liệu quan hệ:** PostgreSQL lưu trữ toàn bộ metadata nghiệp vụ gồm thông tin người dùng, phiếu OMR, bài thi và kết quả chấm điểm. Dữ liệu có cấu trúc phức tạp như bộ đáp án đa mã đề (`answer_sets`) và lịch sử chấm (`last_result`) được lưu dưới dạng cột JSON, cho phép truy vấn linh hoạt mà không cần thêm bảng phụ.
-* **Lưu trữ file:** Ảnh phiếu thi gốc, ảnh kết quả có overlay màu, ảnh crop vùng MSSV và MCQ, file JSON confidence của từng bong bóng, cùng ảnh mẫu phiếu thi được lưu vào các thư mục riêng biệt trong `storage/uploads` (`omr`, `omr_templates`, `omr_data`). Static file server tích hợp trong FastAPI phục vụ các file này qua đường dẫn `/static/`.
-* **Sidecar metadata:** Mỗi phiếu OMR đã lưu kèm một file JSON phụ (sidecar) chứa thông tin cấu hình như ảnh mẫu, danh sách trường thông tin, số chữ số MSSV và thời điểm lưu. Cơ chế này tách metadata khỏi bảng chính, giảm kích thước hàng trong DB và cho phép cập nhật cấu hình không cần migration.
+* **Cơ sở dữ liệu quan hệ:** PostgreSQL lưu trữ metadata nghiệp vụ gồm thông tin người dùng, bài thi, template OMR, cấu hình template và kết quả chấm. Dữ liệu bán cấu trúc như `answer_sets`, `last_result`, `omr_answer`, `info_fields` và `result_json` được lưu dưới dạng JSON.
+* **Bảng lịch sử chấm độc lập:** Ngoài `last_result` trên `omr_assignment` để tương thích giao diện cũ, hệ thống đã bổ sung bảng `omr_grade_result` để lưu từng lượt chấm với `aid`, `uuid`, `omrid`, MSSV, mã đề, điểm, đường dẫn ảnh kết quả/crop và JSON kết quả đầy đủ.
+* **Lưu trữ file:** Ảnh phiếu thi gốc, ảnh kết quả có overlay màu, ảnh crop vùng MSSV/MCQ/họ tên, file JSON confidence của từng bong bóng, file ZIP kết quả batch và ảnh/PDF template được lưu trong `storage/uploads` (`omr`, `omr_templates`, `omr_data`). Static file server tích hợp trong FastAPI phục vụ các file này qua đường dẫn `/static/`.
+* **Metadata template trong SQL:** Các trường metadata của template như `template_image`, `info_fields`, `options`, `rows_per_block` và `student_id_digits` được lưu trong bảng `omr_test`.
+* **File đáp án tạm:** Thư mục `storage/uploads/answer_keys/omr` chỉ dùng tạm khi giáo viên upload file đáp án Word/PDF/TXT. Sau khi parse, đáp án đã được lưu vào SQL (`OMRTest.omr_answer` hoặc `OMRAssignment.answer_sets`) và file upload được xóa để giảm dữ liệu rác.
 * **Dung lượng ước tính:** Mỗi phiếu thi sau xử lý sinh ra khoảng 2-5 MB file ảnh kết quả. Với quy mô 1.000 bài chấm mỗi kỳ thi, hệ thống cần dự phòng khoảng 5-10 GB dung lượng lưu trữ cho mỗi năm học. Kết quả chấm hàng loạt được đóng gói ZIP để giảm số lần truyền tải.
 
 #### 2.4.3 Tính dễ dùng
@@ -514,24 +505,25 @@ Hệ thống được thiết kế hướng đến giáo viên không có chuyê
 * **Giao diện một trang (SPA):** Toàn bộ luồng chấm điểm từ chọn bài thi, tải ảnh lên đến xem kết quả diễn ra trên một màn hình duy nhất mà không cần tải lại trang, giảm thiểu thao tác điều hướng.
 * **Smart Camera Scanner:** Tính năng quét camera tích hợp tự động nhận diện bốn góc phiếu thi theo thời gian thực, khóa khung hình khi điều kiện ánh sáng và góc chụp đạt yêu cầu và tự động chụp mà không cần người dùng nhấn nút. Điều này đặc biệt hữu ích khi chấm số lượng lớn tại lớp học.
 * **Gợi ý vùng cắt tự động:** Endpoint `/api/omr/suggest-crop` phân tích ảnh và trả về tọa độ bốn góc đề xuất, giúp giáo viên hiệu chỉnh chính xác mà không cần ước lượng thủ công.
-* **Phản hồi lỗi rõ ràng:** API trả về thông báo lỗi bằng tiếng Việt có nội dung cụ thể (ví dụ: “Số lượng đáp án (38) không khớp với số câu hỏi (40)”), giúp giáo viên tự xử lý mà không cần hỗ trợ kỹ thuật.
-* **Hỗ trợ đa định dạng đáp án:** Giáo viên có thể nhập đáp án trực tiếp (A/B/C/D hoặc 1/2/3/4) hoặc upload file Word, PDF, TXT - hệ thống tự động phân tích cú pháp, giảm bước chuẩn bị dữ liệu.
+* **Phản hồi lỗi rõ ràng:** API trả về thông báo lỗi bằng tiếng Việt có nội dung cụ thể (ví dụ: “Đề thi này chưa được cung cấp đáp án”), giúp giáo viên tự xử lý mà không cần hỗ trợ kỹ thuật.
+* **Quản lý đáp án theo mã đề:** Giao diện chính hiện cho giáo viên cấu hình đáp án trực tiếp bằng các lựa chọn A/B/C/D theo từng mã đề.
 * **Xuất kết quả:** Danh sách kết quả có thể xuất ra file Excel (.xlsx) hoặc PDF ngay trên trình duyệt, phục vụ nhu cầu lưu trữ và báo cáo mà không cần phần mềm bổ sung.
 
 #### 2.4.4 Khả năng mở rộng
 Kiến trúc hệ thống được thiết kế theo hướng module hóa, cho phép bổ sung tính năng và tăng quy mô mà không cần tái cấu trúc toàn bộ.
 * **Tách biệt frontend và backend:** React SPA giao tiếp với FastAPI hoàn toàn qua REST API. Hai tầng có thể triển khai độc lập, cho phép mở rộng backend theo chiều ngang (thêm instance) hoặc thay thế frontend mà không ảnh hưởng đến logic nghiệp vụ.
-* **Form Profile linh hoạt:** Cấu hình nhận diện phiếu thi (Form Profile) được lưu dưới dạng file JSON độc lập theo từng mẫu phiếu. Để hỗ trợ loại phiếu mới, chỉ cần thêm file mẫu vào thư mục `omr_data` và cấu hình profile tương ứng – không cần thay đổi code pipeline.
+* **Form Profile linh hoạt:** Cấu hình nhận diện phiếu thi (Form Profile) được lưu dưới dạng file JSON độc lập trong `storage/uploads/omr_data/profiles`. Để hỗ trợ loại phiếu mới, chỉ cần thêm file mẫu và cấu hình profile tương ứng; metadata nghiệp vụ của template được đồng bộ vào SQL để dễ quản lý.
 * **Pipeline xử lý ảnh có tham số hóa:** Toàn bộ các tham số xử lý ảnh (ngưỡng nhị phân, tỉ lệ vùng bong bóng, chiến lược ROI, bộ giải mã MCQ) đều có thể ghi đè qua profile mà không cần sửa code nguồn, cho phép tinh chỉnh độ chính xác theo từng loại phiếu mà không ảnh hưởng đến các loại phiếu khác.
 * **Hỗ trợ đa mã đề:** Cấu trúc `answer_sets` lưu danh sách bộ đáp án theo mã đề (ví dụ: mã 001, 002, 003), cho phép một bài thi quản lý nhiều đề thi khác nhau. Hệ thống tự động chọn đáp án phù hợp dựa trên mã đề nhận diện từ phiếu.
 * **Cơ chế MCQ Map Search Rescue:** Tính năng tự động hiệu chỉnh lưới MCQ được triển khai trong `omr_service.py`, có thể bật/tắt qua cấu hình profile `disable_mcq_rescue`. Cơ chế này thử các biến thể line-height/top-shift khi số câu không chắc chắn vượt ngưỡng.
+* **Sẵn sàng tách object storage:** Các file nhị phân lớn được tham chiếu bằng đường dẫn thay vì lưu trực tiếp vào SQL. Khi triển khai lên AWS, lớp lưu trữ này có thể chuyển từ filesystem cục bộ sang S3 mà không thay đổi mô hình dữ liệu chính.
 
 #### 2.4.5 Hiệu năng
 Hệ thống áp dụng nhiều kỹ thuật tối ưu để đảm bảo thời gian phản hồi chấp nhận được trong điều kiện tài nguyên phần cứng hạn chế tại trường học.
 * **Xử lý bất đồng bộ:** FastAPI sử dụng mô hình ASGI với asyncio. Các tác vụ tính toán nặng như xử lý ảnh OpenCV/NumPy được chạy trong thread pool riêng qua `run_in_threadpool`, tránh chặn vòng lặp sự kiện và cho phép server xử lý đồng thời nhiều request.
 * **Thời gian xử lý một phiếu:** Trên phần cứng CPU thông thường (Intel Core i5 thế hệ 10 trở lên), một phiếu thi 40 câu được xử lý hoàn chỉnh trong khoảng 1-3 giây bao gồm nhị phân hóa, phát hiện góc, cắt phối cảnh, nhận diện MSSV và chấm điểm MCQ.
 * **Chấm hàng loạt tối ưu:** Endpoint `/grade-batch` chấp nhận tối đa 50 ảnh trong một request, giảm overhead HTTP so với gửi từng ảnh riêng lẻ. Ảnh kết quả được đóng gói ZIP ngay trên server trước khi trả về, giảm số lần tải file.
-* **Cache profile:** Form Profile được đọc từ file JSON một lần tại thời điểm xử lý request; cơ chế `_resolve_profile()` ưu tiên profile đã lưu trên đĩa, tránh tái tạo cấu hình mặc định mỗi lần gọi.
+* **Đọc profile theo request:** Form Profile được resolve tại thời điểm xử lý request; cơ chế `_resolve_profile()` ưu tiên profile đã lưu trên đĩa và chỉ dùng cấu hình mặc định khi không tìm thấy profile tương ứng.
 * **Tối ưu phục vụ file tĩnh:** Ảnh kết quả và ảnh mẫu được phục vụ trực tiếp qua `StaticFiles` của Starlette, tận dụng cơ chế buffer và header Content-Type tự động mà không qua lớp xử lý Python, cho throughput tương đương Nginx trong môi trường nội bộ.
 
 ---
@@ -586,12 +578,12 @@ Dữ liệu nghiệp vụ gồm tài khoản, bài thi, nhiều bộ đáp án t
 
 | Công nghệ | Vai trò tương đương | Đánh giá |
 |---|---|---|
-| **PostgreSQL** | CSDL quan hệ có JSON | Được chọn vì hỗ trợ JSON tốt, phù hợp lưu `answer_sets` và `last_result` |
+| **PostgreSQL** | CSDL quan hệ có JSON | Được chọn vì hỗ trợ JSON tốt, phù hợp lưu `answer_sets`, metadata template và `result_json` của từng lượt chấm |
 | MySQL/MariaDB | CSDL quan hệ | Có JSON nhưng PostgreSQL thuận lợi hơn với dữ liệu bán cấu trúc |
 | SQLite | CSDL nhúng | Thuận tiện test local nhưng hạn chế khi nhiều người dùng đồng thời |
 | MongoDB | CSDL document | Phù hợp document JSON nhưng hệ thống vẫn có quan hệ rõ giữa `users`, `omr_assignment`, `omr_test` |
 
-SQLAlchemy được chọn thay vì SQL thuần vì codebase định nghĩa model bằng Python class, dùng session dependency trong FastAPI và có thể đổi kết nối bằng `DATABASE_URL`. Hạn chế hiện tại là chưa dùng migration tool như Alembic; bảng được tạo bằng `Base.metadata.create_all()` khi backend khởi động.
+SQLAlchemy được chọn thay vì SQL thuần vì codebase định nghĩa model bằng Python class, dùng session dependency trong FastAPI và có thể đổi kết nối bằng `DATABASE_URL`. Phiên bản hiện tại tạo bảng bằng `Base.metadata.create_all()` khi backend khởi động và có helper `ensure_runtime_schema()` để bổ sung các cột runtime mới cho bảng `omr_test` trong môi trường chưa dùng Alembic.
 
 ### 3.5 Frontend - React 19 + TypeScript 5.9.3 + Vite 7.2.2
 
@@ -604,7 +596,7 @@ Frontend là SPA mobile-first gồm nhiều trạng thái nghiệp vụ: danh s�
 | Angular | SPA framework đầy đủ | Mạnh nhưng boilerplate lớn hơn nhu cầu |
 | Next.js | React SSR/full-stack | Không cần SSR vì ứng dụng là công cụ nội bộ chạy local/LAN |
 
-Vite được chọn vì dev server nhanh, hỗ trợ HTTPS local qua `@vitejs/plugin-basic-ssl`, proxy `/api` và `/static` về backend. HTTPS local quan trọng vì camera browser yêu cầu secure context.
+Vite được chọn vì dev server nhanh, hỗ trợ HTTPS local qua `@vitejs/plugin-basic-ssl`, proxy `/api` và `/static` về backend. HTTPS local quan trọng vì camera browser yêu cầu secure context. Frontend cũng dùng `pdfjs-dist` trong chế độ dev để render trang đầu của PDF mẫu lên canvas khi cấu hình ROI họ tên.
 
 ### 3.6 WebRTC MediaDevices API
 
@@ -652,8 +644,8 @@ graph TB
     end
 
     subgraph Data["Data Tier"]
-        DB["PostgreSQL\nusers, omr_assignment, omr_test"]
-        FS["storage/uploads\nảnh, crop, template, profile"]
+        DB["PostgreSQL\nusers, omr_assignment, omr_test, omr_grade_result"]
+        FS["storage/uploads\nảnh, crop, template, profile, zip"]
     end
 
     Browser -- "HTTP REST / multipart" --> FastAPI
@@ -661,92 +653,347 @@ graph TB
     Service -- "cv2.imwrite/json" --> FS
 ```
 
-Tầng ứng dụng hiện tại không gọi hai mô hình CNN tự huấn luyện trong luồng chấm chính. Việc chấm điểm dựa trên OpenCV/NumPy, marker, ROI, density/darkness và cơ chế hiệu chỉnh bản đồ MCQ.
+Trong kiến trúc này, **Presentation Tier** là React SPA chạy trên trình duyệt. Tầng này quản lý đăng nhập, danh sách bài thi, nhập đáp án, upload ảnh, camera scanner, hiển thị ảnh overlay và xuất kết quả. Frontend không thực hiện chấm điểm chính; khi giáo viên chọn hoặc chụp ảnh, frontend chỉ kiểm tra trạng thái bài thi, tạo `FormData` và gửi request tới backend.
+
+**Application Tier** là FastAPI backend. Router trong `be/app/api/` tiếp nhận HTTP request, kiểm tra dữ liệu đầu vào, đọc bài thi/profile/đáp án, sau đó gọi service xử lý ảnh. Pipeline OpenCV/NumPy, decode MSSV, decode mã đề, nhận diện đáp án và cơ chế MCQ Map Search Rescue đều nằm ở tầng backend để đảm bảo logic chấm điểm thống nhất và có thể kiểm thử tập trung.
+
+**Data Tier** gồm PostgreSQL và file system. PostgreSQL lưu dữ liệu nghiệp vụ như user, bài thi, bộ đáp án, template và lịch sử chấm. Hệ thống không lưu ảnh lớn trực tiếp trong SQL; ảnh upload, ảnh overlay, crop MSSV/MCQ, JSON confidence và ZIP batch được ghi vào `storage/uploads`, còn database chỉ lưu metadata và đường dẫn tương ứng.
 
 #### 4.1.3 Thiết kế tổng quan Frontend
 
 **Hình 4.2: Thiết kế tổng quan Frontend**
 
 ```mermaid
-graph TD
-    App["App.tsx\nRouter"] --> Login["LoginPage.tsx"]
-    App --> Register["RegisterPage.tsx"]
-    App --> Home["HomePage.tsx"]
-    App --> Multi["features/omr/pages/MultichoicePage.tsx"]
-    Multi --> Grading["Tab Chấm bài\nCamera + upload"]
-    Multi --> Answers["Tab Đáp án\nanswerSets"]
-    Multi --> Stats["StatsPanel.tsx"]
-    Multi --> Export["ExportPanel.tsx"]
-    Multi --> Types["types.ts"]
-    Multi --> Utils["utils.ts"]
-    Multi --> Api["config/api.ts"]
+flowchart TD
+    subgraph Frontend["Frontend Package"]
+        AppShell["AppShell"]
+        Routing["Routing"]
+        Pages["Pages"]
+        Auth["Auth"]
+        SharedUI["SharedUI"]
+        OMRFeature["OMRFeature"]
+        ApiClient["ApiClient"]
+    end
+
+    AppShell -.-> Routing
+    Routing -.-> Pages
+    Routing -.-> OMRFeature
+    Pages -.-> Auth
+    Pages -.-> SharedUI
+    Auth -.-> ApiClient
+    OMRFeature -.-> SharedUI
+    OMRFeature -.-> ApiClient
+    ApiClient -.-> Backend["Backend API"]
 ```
+
+`AppShell` khởi tạo ứng dụng, `Routing` điều phối route, `Pages` chứa các màn hình chung, `Auth` xử lý xác thực, `SharedUI` chứa thành phần giao diện tái sử dụng, `OMRFeature` gom toàn bộ nghiệp vụ chấm phiếu và `ApiClient` là điểm giao tiếp duy nhất với backend.
+
+Các phụ thuộc được biểu diễn bằng mũi tên nét đứt theo hướng từ gói sử dụng sang gói được sử dụng. `SharedUI` và `ApiClient` không phụ thuộc ngược lại vào `Pages` hoặc `OMRFeature`, nhờ đó frontend giữ được liên kết lỏng và tránh phụ thuộc vòng.
 
 #### 4.1.4 Thiết kế tổng quan Backend
 
 **Hình 4.3: Thiết kế tổng quan Backend**
 
 ```mermaid
-graph TD
-    Main["main.py"] --> Auth["api/auth.py"]
-    Main --> OmrRouter["api/omr/__init__.py"]
-    OmrRouter --> Templates["templates.py"]
-    OmrRouter --> Profiles["profiles.py"]
-    OmrRouter --> Assignments["assignments.py"]
-    OmrRouter --> Grading["grading.py"]
-    Grading --> Shared["shared.py"]
-    Shared --> Service["services/omr/omr_service.py"]
-    Service --> Pre["omr_preprocess.py"]
-    Service --> Layout["omr_layout.py\nomr_marker_utils.py"]
-    Service --> Decode["omr_mcq.py\nomr_numeric.py\nomr_handwriting.py"]
-    Service --> Score["omr_scoring.py\nomr_visualize.py"]
-    Auth --> DB["db/session.py\nmodels"]
-    Assignments --> DB
-    Templates --> DB
+flowchart TD
+    subgraph Backend["Backend Package"]
+        AppEntry["AppEntry"]
+        ApiLayer["ApiLayer"]
+        BusinessServices["BusinessServices"]
+        OMRProcessing["OMRProcessing"]
+        DataAccess["DataAccess"]
+        Infrastructure["Infrastructure"]
+    end
+
+    AppEntry -.-> ApiLayer
+    AppEntry -.-> DataAccess
+    AppEntry -.-> Infrastructure
+    ApiLayer -.-> BusinessServices
+    BusinessServices -.-> OMRProcessing
+    BusinessServices -.-> DataAccess
+    BusinessServices -.-> Infrastructure
 ```
 
-#### 4.1.5 Biểu đồ package chi tiết
+Hình 4.3 chỉ mô tả backend ở mức package tổng quan. `AppEntry` là điểm khởi động FastAPI, đăng ký middleware/router và static file. `ApiLayer` tiếp nhận HTTP request. `BusinessServices` chứa logic nghiệp vụ của xác thực, bài thi, mẫu phiếu, đáp án và kết quả. `OMRProcessing` đóng gói pipeline xử lý ảnh. `DataAccess` quản lý truy cập PostgreSQL, còn `Infrastructure` quản lý log, đường dẫn runtime và file upload.
 
-**Hình 4.5: Biểu đồ package backend và frontend**
+Các phụ thuộc được thiết kế một chiều từ tầng ngoài vào tầng trong: entrypoint phụ thuộc API và hạ tầng khởi tạo, API phụ thuộc nghiệp vụ, nghiệp vụ phụ thuộc xử lý ảnh, dữ liệu và hạ tầng. `DataAccess`, `Infrastructure` và `OMRProcessing` không gọi ngược lên tầng API, giúp loại bỏ phụ thuộc vòng.
+
+#### 4.1.5 Cấu trúc mã nguồn hệ thống
+
+Cấu trúc mã nguồn được tổ chức theo hai khối chính: frontend React trong `fe/` và backend FastAPI trong `be/`. Các file runtime sinh ra khi chấm bài được tách khỏi mã nguồn và lưu trong `storage/`.
+
+```txt
+OCR_CRNN/
+|-- fe/
+|   |-- src/
+|   |   |-- App.tsx
+|   |   |-- pages/
+|   |   |   |-- HomePage.tsx
+|   |   |   |-- LoginPage.tsx
+|   |   |   `-- RegisterPage.tsx
+|   |   |-- components/
+|   |   |-- config/
+|   |   |   `-- api.ts
+|   |   `-- features/omr/
+|   |       |-- pages/
+|   |       |   `-- MultichoicePage.tsx
+|   |       |-- components/
+|   |       |   |-- ExportPanel.tsx
+|   |       |   |-- StatsPanel.tsx
+|   |       |   `-- OmrProfileRoiEditor.tsx
+|   |       |-- styles/
+|   |       |   `-- OmrMobileApp.css
+|   |       |-- types.ts
+|   |       `-- utils.ts
+|
+|-- be/
+|   |-- main.py
+|   `-- app/
+|       |-- api/
+|       |   |-- auth.py
+|       |   `-- omr/
+|       |       |-- assignments.py
+|       |       |-- grade_results.py
+|       |       |-- grading.py
+|       |       |-- profiles.py
+|       |       |-- shared.py
+|       |       `-- templates.py
+|       |-- services/
+|       |   `-- omr/
+|       |       |-- omr_service.py
+|       |       |-- omr_preprocess.py
+|       |       |-- omr_layout.py
+|       |       |-- omr_marker_utils.py
+|       |       |-- omr_mcq.py
+|       |       |-- omr_numeric.py
+|       |       |-- omr_scoring.py
+|       |       |-- omr_handwriting.py
+|       |       `-- omr_visualize.py
+|       |-- db/
+|       |   |-- session.py
+|       |   `-- models/
+|       |       |-- user.py
+|       |       `-- omr.py
+|       `-- core/
+|           |-- paths.py
+|           `-- logging.py
+|
+|-- storage/
+|   |-- uploads/
+|   |   |-- omr/
+|   |   |-- omr_templates/
+|   |   |-- omr_data/profiles/
+|   |   |-- answer_keys/omr/
+|   |   `-- temp/
+|   `-- logs/
+|
+|-- docs/
+`-- README.md
+```
+
+**Bảng 4.1: Vai trò thư mục và module chính**
+
+| Thành phần | Vai trò |
+|---|---|
+| `fe/src/features/omr/pages/MultichoicePage.tsx` | Màn hình nghiệp vụ OMR chính: tạo bài thi, nhập đáp án, chọn ảnh, gọi API chấm, camera scanner, xem kết quả |
+| `fe/src/features/omr/components/StatsPanel.tsx` | Hiển thị thống kê kết quả chấm theo bài thi |
+| `fe/src/features/omr/components/ExportPanel.tsx` | Xuất kết quả ra Excel/PDF trên frontend |
+| `fe/src/features/omr/components/OmrProfileRoiEditor.tsx` | Công cụ cấu hình ROI cho profile trong môi trường phát triển |
+| `fe/src/config/api.ts` | Khai báo endpoint frontend gọi tới backend |
+| `be/app/api/auth.py` | Router đăng nhập/đăng ký người dùng |
+| `be/app/api/omr/assignments.py` | Router tạo, đọc, cập nhật, xóa bài thi OMR |
+| `be/app/api/omr/grading.py` | Router nhận request chấm một phiếu, chấm hàng loạt và gợi ý crop |
+| `be/app/api/omr/grade_results.py` | Router đọc/xóa lịch sử từng lượt chấm trong `omr_grade_result` |
+| `be/app/api/omr/profiles.py` | Router đọc/lưu Form Profile |
+| `be/app/api/omr/shared.py` | Helper chung cho validate, serialize, lưu kết quả và xử lý URL tĩnh |
+| `be/app/services/omr/omr_service.py` | Điều phối pipeline OMR end-to-end qua `process_omr_exam()` |
+| `be/app/services/omr/omr_mcq.py` | Decode lưới câu hỏi, tính density/darkness, chọn đáp án và đánh dấu câu không chắc chắn |
+| `be/app/services/omr/omr_numeric.py` | Decode lưới số MSSV và mã đề |
+| `be/app/services/omr/omr_visualize.py` | Vẽ overlay/crop phục vụ kiểm tra trực quan |
+| `be/app/db/models/omr.py` | Khai báo bảng `omr_assignment`, `omr_test`, `omr_grade_result` bằng SQLAlchemy |
+| `be/app/core/paths.py` | Tập trung cấu hình đường dẫn runtime như `storage/uploads/omr` và `storage/uploads/omr_data/profiles` |
+| `storage/uploads/` | Lưu ảnh upload, overlay, crop, JSON confidence, template, profile và file ZIP batch |
+| PostgreSQL | Lưu user, bài thi, đáp án, template/profile metadata và lịch sử chấm |
+
+**Bảng 4.2: Input/output các chức năng chính**
+
+| Chức năng | Input | Xử lý chính | Output |
+|---|---|---|---|
+| Đăng nhập | Email, password | `auth.py` kiểm tra tài khoản | Thông tin user lưu ở frontend |
+| Tạo bài thi | Title, profile, số câu, tổng điểm | `assignments.py` lưu `omr_assignment` | Bài thi mới trong danh sách |
+| Nhập đáp án | Mã đề, danh sách đáp án | Frontend cập nhật `answer_sets` qua API assignment | Bộ đáp án theo mã đề |
+| Chấm một ảnh | Ảnh, `uid`, `aid`, đáp án, profile | `grading.py` gọi `process_omr_exam()` | Điểm, MSSV, mã đề, overlay, chi tiết từng câu |
+| Chấm hàng loạt | Danh sách ảnh, `uid`, `aid`, đáp án, profile | Backend lặp pipeline cho từng ảnh | `success_count`, `failed_count`, `results`, `zip_url` |
+| Cấu hình ROI | Template, điểm chọn trên canvas | `OmrProfileRoiEditor.tsx` quy đổi ROI về hệ post-warp | Profile JSON trong `storage/uploads/omr_data/profiles` |
+| Xem thống kê | Bài thi và lịch sử chấm | `StatsPanel.tsx` tổng hợp điểm | Bảng thống kê, trung bình, cao nhất, thấp nhất |
+| Xuất kết quả | Danh sách bản ghi | `ExportPanel.tsx` tạo Excel/PDF | File tải về |
+
+**Bảng 4.3: API chính của hệ thống**
+
+| API | Method | Chức năng | Input chính | Output chính |
+|---|---|---|---|---|
+| `/api/login` | POST | Đăng nhập | email, password | Thông tin user |
+| `/api/register` | POST | Đăng ký | user_name, email, password | Thông tin user mới |
+| `/api/omr/assignments` | POST | Tạo bài thi | uid, title, profile, số câu | Assignment mới |
+| `/api/omr/assignments/{uid}` | GET | Lấy danh sách bài thi | uid | Danh sách bài thi |
+| `/api/omr/assignments/{uid}/{aid}` | PUT | Cập nhật bài thi/đáp án/lượt chấm gần nhất | FormData assignment | Assignment đã cập nhật |
+| `/api/omr/assignments/{uid}/{aid}/grade-results` | GET | Lấy lịch sử chấm của một bài | uid, aid | `grade_results` |
+| `/api/omr/grade` | POST | Chấm một phiếu | file, uid, aid, answers, profile | `OMRResult` + URL ảnh |
+| `/api/omr/grade-batch` | POST | Chấm nhiều phiếu | files, uid, aid, answers, profile | Batch result |
+| `/api/omr/form-profiles` | GET/POST | Đọc hoặc lưu Form Profile | profile JSON | Danh sách/profile đã lưu |
+| `/api/omr/suggest-crop` | POST | Gợi ý tứ giác crop | image | Tọa độ 4 góc |
+
+Nhờ cách tách này, request từ frontend luôn đi qua router rõ ràng trước khi vào service. Những module xử lý ảnh không phụ thuộc trực tiếp vào React hoặc HTTP, còn frontend không truy cập thẳng database/file system.
+
+#### 4.1.6 Biểu đồ package chi tiết
+
+Khác với hai hình tổng quan phía trên, phần này tách biểu đồ package chi tiết thành ba góc nhìn nhỏ: frontend, backend và phụ thuộc liên tầng. Cách tách này giúp mỗi hình chỉ tập trung vào một phạm vi, dễ đọc hơn so với việc gộp toàn bộ hệ thống vào một sơ đồ lớn.
+
+**Hình 4.5a: Biểu đồ package chi tiết Frontend**
 
 ```mermaid
-graph TD
-    subgraph FE["fe/src"]
-        FEApp["App.tsx"]
-        Pages["pages/"]
-        Components["components/"]
-        OMR["features/omr/"]
-        Config["config/api.ts"]
-        FEApp --> Pages
-        FEApp --> OMR
-        Pages --> Config
-        OMR --> Config
-        OMR --> Components
+flowchart TD
+    subgraph FrontendDetail["Frontend Detail"]
+        AppShell["AppShell"]
+        Routing["Routing"]
+        Pages["Pages"]
+        Auth["Auth"]
+        SharedUI["SharedUI"]
+        ApiClient["ApiClient"]
+
+        subgraph OMRFeature["OMRFeature"]
+            Grading["Grading"]
+            Templates["Templates"]
+            AnswerKeys["AnswerKeys"]
+            Statistics["Statistics"]
+            ExportPkg["Export"]
+            DomainTypes["DomainTypes"]
+            ClientUtils["ClientUtils"]
+        end
     end
 
-    subgraph BE["be/app"]
-        MainPkg["main.py"]
-        ApiPkg["api/"]
-        CorePkg["core/paths.py\ncore/logging.py"]
-        DbPkg["db/session.py\ndb/models/"]
-        ServicePkg["services/omr/"]
-        MainPkg --> ApiPkg
-        MainPkg --> CorePkg
-        MainPkg --> DbPkg
-        ApiPkg --> DbPkg
-        ApiPkg --> ServicePkg
-        ServicePkg --> CorePkg
-    end
-
-    Config -- "HTTP /api, /static" --> MainPkg
+    AppShell -.-> Routing
+    Routing -.-> Pages
+    Routing -.-> OMRFeature
+    Pages -.-> Auth
+    Pages -.-> SharedUI
+    Auth -.-> ApiClient
+    OMRFeature -.-> SharedUI
+    OMRFeature -.-> ApiClient
+    Grading -.-> DomainTypes
+    Templates -.-> DomainTypes
+    AnswerKeys -.-> DomainTypes
+    Statistics -.-> DomainTypes
+    ExportPkg -.-> DomainTypes
+    Grading -.-> ClientUtils
+    Templates -.-> ClientUtils
 ```
+
+Hình 4.5a phân rã package frontend chi tiết hơn so với hình tổng quan. `OMRFeature` được tách thành các gói nghiệp vụ con như `Grading`, `Templates`, `AnswerKeys`, `Statistics` và `Export`; các gói này dùng chung `DomainTypes` và `ClientUtils` để giữ độ kết dính cao trong miền OMR.
+
+**Hình 4.5b: Biểu đồ package chi tiết Backend**
+
+```mermaid
+flowchart TD
+    subgraph BackendDetail["Backend Detail"]
+        AppEntry["AppEntry"]
+
+        subgraph ApiLayer["ApiLayer"]
+            AuthAPI["AuthAPI"]
+            TemplateAPI["TemplateAPI"]
+            ProfileAPI["ProfileAPI"]
+            AssignmentAPI["AssignmentAPI"]
+            GradingAPI["GradingAPI"]
+            ResultAPI["ResultAPI"]
+        end
+
+        subgraph BusinessServices["BusinessServices"]
+            AuthService["AuthService"]
+            TemplateService["TemplateService"]
+            ProfileService["ProfileService"]
+            AssignmentService["AssignmentService"]
+            GradingService["GradingService"]
+            ResultService["ResultService"]
+        end
+
+        subgraph OMRProcessing["OMRProcessing"]
+            Preprocessing["Preprocessing"]
+            LayoutAnalysis["LayoutAnalysis"]
+            Recognition["Recognition"]
+            Scoring["Scoring"]
+            Visualization["Visualization"]
+            AnswerKeyParser["AnswerKeyParser"]
+        end
+
+        subgraph DataAccess["DataAccess"]
+            DbSession["DbSession"]
+            UserModel["UserModel"]
+            OMRModels["OMRModels"]
+            RuntimeSchema["RuntimeSchema"]
+        end
+
+        subgraph Infrastructure["Infrastructure"]
+            RuntimePaths["RuntimePaths"]
+            Logging["Logging"]
+            FileStorage["FileStorage"]
+        end
+    end
+
+    AppEntry -.-> ApiLayer
+    AppEntry -.-> DataAccess
+    AppEntry -.-> Infrastructure
+    ApiLayer -.-> BusinessServices
+    AuthService -.-> DataAccess
+    TemplateService -.-> DataAccess
+    ProfileService -.-> Infrastructure
+    AssignmentService -.-> DataAccess
+    GradingService -.-> OMRProcessing
+    GradingService -.-> DataAccess
+    GradingService -.-> Infrastructure
+    ResultService -.-> DataAccess
+    OMRProcessing -.-> Infrastructure
+```
+
+Hình 4.5b phân rã backend theo tầng. `ApiLayer` gom các router HTTP, `BusinessServices` gom nghiệp vụ, `OMRProcessing` gom các bước xử lý ảnh, `DataAccess` gom session/model/schema và `Infrastructure` gom log, đường dẫn, file runtime. Các mũi tên vẫn đi một chiều từ tầng sử dụng sang tầng được sử dụng để tránh phụ thuộc vòng.
+
+**Hình 4.5c: Phụ thuộc giữa Frontend, Backend và Storage**
+
+```mermaid
+flowchart LR
+    subgraph ClientSide["Frontend"]
+        ApiClient["ApiClient"]
+    end
+
+    subgraph ServerSide["Backend"]
+        AppEntry["AppEntry"]
+        ApiLayer["ApiLayer"]
+        BusinessServices["BusinessServices"]
+        DataAccess["DataAccess"]
+        Infrastructure["Infrastructure"]
+    end
+
+    subgraph Storage["Storage"]
+        PostgreSQL["PostgreSQL"]
+        Uploads["storage/uploads"]
+    end
+
+    ApiClient -.->|REST /api, /static| AppEntry
+    AppEntry -.-> ApiLayer
+    ApiLayer -.-> BusinessServices
+    BusinessServices -.-> DataAccess
+    BusinessServices -.-> Infrastructure
+    DataAccess -.-> PostgreSQL
+    Infrastructure -.-> Uploads
+```
+
+Hình 4.5c mô tả ranh giới giữa client, server và lưu trữ. Frontend chỉ giao tiếp qua `ApiClient`; backend xử lý request qua `AppEntry` và `ApiLayer`; dữ liệu nghiệp vụ được lưu trong PostgreSQL còn ảnh, overlay, crop và file runtime được lưu trong `storage/uploads`. Trong Mermaid, mỗi `subgraph` tương ứng một gói UML; khi dựng bản vẽ chính thức có thể biểu diễn bằng khung package có tab tên gói ở góc trên bên trái.
 
 ### 4.2 Thiết kế chi tiết
 
 #### 4.2.1 Thiết kế giao diện
 Giao diện được thiết kế mobile-first. Toàn bộ CSS chính của OMR nằm trong `fe/src/features/omr/styles/OmrMobileApp.css`.
 
-**Bảng 4.1: Các màn hình chính và điều kiện hiển thị**
+**Bảng 4.4: Các màn hình chính và điều kiện hiển thị**
 
 | Màn hình | Điều kiện/route | Mô tả |
 |---|---|---|
@@ -757,7 +1004,7 @@ Giao diện được thiết kế mobile-first. Toàn bộ CSS chính của OMR 
 
 #### 4.2.2 Thiết kế lớp
 
-**Bảng 4.2: State machine của MultichoicePage**
+**Bảng 4.5: State machine của MultichoicePage**
 
 | State | Kiểu | Mô tả |
 |---|---|---|
@@ -787,7 +1034,7 @@ type OMRResult = {
 }
 ```
 
-#### 4.2.3 Biểu đồ trình tự
+#### 4.2.3 Luồng chấm một phiếu theo mã nguồn
 
 **Hình 4.6: Luồng sequence chấm một phiếu**
 
@@ -811,10 +1058,34 @@ sequenceDiagram
     Service->>Service: MCQ Map Search Rescue nếu cần
     Service->>FS: Ghi overlay/crop/telemetry JSON
     Service-->>API: OMRResult
+    API->>DB: Thêm bản ghi omr_grade_result
     API-->>FE: JSON + static URLs
     FE->>API: PUT /api/omr/assignments/{uid}/{aid}
     API->>DB: Cập nhật last_result, graded_count
 ```
+
+Luồng chấm một phiếu bắt đầu từ thao tác của giáo viên trên `MultichoicePage.tsx`. Khi giáo viên chọn ảnh từ thư viện hoặc để Smart Camera Scanner tự chụp, frontend kiểm tra bài thi đang mở, mã đề đang chọn và bộ đáp án tương ứng. Sau đó frontend tạo `FormData` gồm file ảnh, `uid`, `aid`, chuỗi đáp án, số câu, số lựa chọn, số chữ số MSSV, số dòng mỗi block và `form_profile_code` nếu bài thi có profile.
+
+Request được gửi tới `POST /api/omr/grade`. Router `be/app/api/omr/grading.py` kiểm tra `uid`, đọc bài thi trong `omr_assignment`, xác định profile/template, lưu ảnh upload vào `storage/uploads/omr`, rồi gọi `process_omr_exam()` trong `be/app/services/omr/omr_service.py`. Service đọc ảnh, crop/warp phiếu về hệ tọa độ chuẩn, nhị phân hóa, tìm marker, dựng ROI, decode MSSV, mã đề và đáp án MCQ. Nếu số câu không chắc chắn vượt ngưỡng, cơ chế MCQ Map Search Rescue thử các biến thể lưới để tìm kết quả tốt hơn baseline.
+
+Sau khi có `OMRResult`, backend so sánh với `answer_sets`, tính điểm, lưu ảnh overlay/crop/JSON confidence vào `storage/uploads/omr`, thêm bản ghi vào `omr_grade_result` thông qua helper trong `shared.py`, rồi trả JSON về frontend. Frontend hiển thị điểm, MSSV, mã đề, overlay và bảng đúng/sai; đồng thời cập nhật `last_result`/`graded_count` để danh sách bài thi phản ánh lượt chấm mới nhất.
+
+**Bảng 4.6: Luồng chấm một phiếu theo mã nguồn**
+
+| Bước | File/module liên quan | Dữ liệu vào | Dữ liệu ra |
+|---|---|---|---|
+| Chọn/chụp ảnh | `MultichoicePage.tsx` | File ảnh hoặc camera frame | `FormData` |
+| Gọi API | `fe/src/config/api.ts` | `FormData`, endpoint `GRADE` | HTTP multipart request |
+| Nhận request | `grading.py` | file, uid, aid, answers, profile | File upload + tham số đã validate |
+| Đọc nghiệp vụ | `shared.py`, `models/omr.py` | uid, aid | `omr_assignment`, `answer_sets`, profile |
+| Xử lý ảnh | `omr_service.py` và các helper OMR | Đường dẫn ảnh + runtime config | `OMRResult` |
+| Decode MCQ | `omr_mcq.py` | ROI MCQ, ảnh xám, ảnh nhị phân | Đáp án, confidence, uncertain |
+| Decode MSSV/mã đề | `omr_numeric.py` | ROI số | `student_id`, `exam_code` |
+| Lưu file trực quan | `omr_visualize.py`, `storage/uploads/omr` | Ảnh chuẩn + kết quả decode | overlay, crop, confidence JSON |
+| Lưu lịch sử | `shared.py`, `omr_grade_result` | `OMRResult`, metadata file | Bản ghi lịch sử chấm |
+| Hiển thị | React component | JSON response | Điểm, overlay, bảng đáp án |
+
+#### 4.2.4 Luồng chấm hàng loạt theo mã nguồn
 
 **Hình 4.7: Luồng sequence chấm hàng loạt**
 
@@ -824,6 +1095,7 @@ sequenceDiagram
     participant FE as MultichoicePage.tsx
     participant API as grading.py
     participant Service as omr_service.py
+    participant DB as PostgreSQL
     participant FS as storage/uploads
 
     Teacher->>FE: Chọn tối đa 50 ảnh
@@ -833,12 +1105,27 @@ sequenceDiagram
         API->>FS: Lưu file
         API->>Service: process_omr_exam()
         Service-->>API: success/error
+        API->>DB: Lưu omr_grade_result nếu chấm thành công
     end
     API->>FS: Tạo zip overlay nếu có kết quả
     API-->>FE: success_count, failed_count, results, zip_url
 ```
 
-#### 4.2.4 Thiết kế cơ sở dữ liệu
+Với chấm hàng loạt, người dùng chọn tối đa 50 ảnh trên frontend. Nếu `pickedFiles.length > 1`, `MultichoicePage.tsx` gọi `POST /api/omr/grade-batch` và gửi nhiều field `files` trong cùng một `FormData`. Backend kiểm tra số lượng file, bài thi, bộ đáp án và profile trước khi xử lý.
+
+Trong `grade_exam_batch()`, backend lặp qua từng ảnh. Mỗi ảnh được lưu vào `storage/uploads/omr` và chạy cùng pipeline `process_omr_exam()` như luồng chấm một phiếu. Ảnh chấm thành công được thêm bản ghi `omr_grade_result` và đưa vào mảng `results`; ảnh lỗi không làm dừng toàn bộ batch mà được ghi thành phần tử `success: false` trong `results`, đồng thời tăng `failed_count`. Nếu có overlay thành công, backend tạo file ZIP trong `storage/uploads/omr` và trả `zip_url` để frontend cho phép tải về.
+
+**Bảng 4.7: Trường kết quả chấm hàng loạt**
+
+| Trường kết quả batch | Ý nghĩa |
+|---|---|
+| `success_count` | Số ảnh chấm thành công |
+| `failed_count` | Số ảnh lỗi hoặc không decode được |
+| `answer_source` | Nguồn đáp án backend dùng để so sánh |
+| `results` | Danh sách kết quả từng ảnh; phần tử thành công có điểm, MSSV, mã đề, URL overlay/crop và `grade_result_id`, phần tử lỗi có `success: false` và `error` |
+| `zip_url` | Đường dẫn file ZIP chứa overlay của các ảnh chấm thành công |
+
+#### 4.2.5 Thiết kế cơ sở dữ liệu
 
 **Hình 4.4: Sơ đồ ERD**
 
@@ -875,29 +1162,70 @@ erDiagram
         varchar(3) omr_code
         int omr_quest
         json omr_answer
+        varchar template_image
+        json info_fields
+        int options
+        int rows_per_block
+        int student_id_digits
         datetime created_at
         datetime updated_at
     }
 
+    omr_grade_result {
+        int grid PK
+        int aid FK
+        int uuid FK
+        int omrid FK
+        varchar source
+        varchar file_name
+        varchar student_id
+        varchar exam_code
+        varchar score
+        varchar result_image
+        varchar sid_crop_image
+        varchar mcq_crop_image
+        varchar bubble_confidence_json
+        json result_json
+        datetime created_at
+    }
+
     users ||--o{ omr_assignment : "tạo"
     users ||--o{ omr_test : "tạo"
+    users ||--o{ omr_grade_result : "có kết quả"
+    omr_assignment ||--o{ omr_grade_result : "gồm"
+    omr_test ||--o{ omr_grade_result : "dùng template"
 ```
 
-**Bảng 4.3: Mô tả các cột chính**
+**Bảng 4.8: Mô tả các cột chính**
 
 | Bảng | Cột | Kiểu | Mô tả |
 |---|---|---|---|
 | `users` | `uuid` | INTEGER PK | ID người dùng |
 | `users` | `password` | VARCHAR | Prototype hiện lưu plain text, cần hash ở production |
 | `omr_assignment` | `answer_sets` | JSON | Danh sách bộ đáp án theo mã đề |
-| `omr_assignment` | `last_result` | JSON | Lịch sử chấm và bản ghi mới nhất |
+| `omr_assignment` | `last_result` | JSON | Bản ghi mới nhất/metadata tương thích giao diện cũ |
 | `omr_test` | `omr_answer` | JSON | Đáp án zero-based của mẫu phiếu |
+| `omr_test` | `template_image` | VARCHAR | Đường dẫn ảnh/PDF template trong `/static/omr_templates` |
+| `omr_test` | `info_fields`, `options`, `rows_per_block`, `student_id_digits` | JSON/INTEGER | Metadata cấu hình template OMR |
+| `omr_grade_result` | `result_json` | JSON | Kết quả chấm đầy đủ của một lượt chấm |
+| `omr_grade_result` | `result_image`, `sid_crop_image`, `mcq_crop_image`, `bubble_confidence_json` | VARCHAR | Đường dẫn file runtime phục vụ xem lại lịch sử |
+
+**Bảng 4.9: Vai trò bảng dữ liệu trong luồng hoạt động**
+
+| Bảng | Vai trò trong luồng hoạt động |
+|---|---|
+| `users` | Xác định giáo viên đang đăng nhập và làm khóa ngoại cho bài thi, template, lịch sử chấm |
+| `omr_assignment` | Lưu bài thi trên giao diện mobile, số câu, tổng điểm, `answer_sets` theo nhiều mã đề, `active_code`, `graded_count` và `last_result` |
+| `omr_test` | Lưu template/profile phiếu OMR và metadata cấu hình như số lựa chọn, số dòng mỗi block, số chữ số MSSV |
+| `omr_grade_result` | Lưu từng lượt chấm, gồm điểm, MSSV, mã đề, nguồn chấm single/batch, đường dẫn overlay/crop và JSON kết quả đầy đủ |
+
+Trong luồng chấm, `answer_sets` của `omr_assignment` là nguồn đáp án chính khi giáo viên quản lý nhiều mã đề trong cùng một bài thi. Trường `last_result` chỉ giữ kết quả gần nhất để tương thích giao diện danh sách bài thi; lịch sử đầy đủ phải đọc từ `omr_grade_result`. Các file ảnh, crop, ZIP và JSON confidence không được nhúng vào SQL mà chỉ lưu đường dẫn để tránh làm phình database.
 
 ### 4.3 Xây dựng ứng dụng
 
 #### 4.3.1 Thư viện và công cụ sử dụng
 
-**Bảng 4.5: Thư viện và công cụ sử dụng**
+**Bảng 4.10: Thư viện và công cụ sử dụng**
 
 | Mục đích | Công cụ | Phiên bản |
 |---|---|---|
@@ -906,6 +1234,7 @@ erDiagram
 | Xử lý ảnh | OpenCV-Python, NumPy, scikit-image, Pillow | 4.12.0.88, 2.2.6, 0.25.2, 10.2.0 |
 | OCR/học sâu mở rộng | PyTorch, TorchVision, EasyOCR, VietOCR, Transformers | Theo `requirements.txt` |
 | Frontend | React, TypeScript, Vite | 19.2.0, 5.9.3, 7.2.2 |
+| Render PDF trên frontend | pdfjs-dist | Dùng trong ROI editor để hiển thị trang đầu PDF mẫu lên canvas |
 | Xuất file | jsPDF, XLSX | 4.2.1, 0.18.5 |
 
 #### 4.3.2 Pipeline xử lý ảnh OMR - 15 bước
@@ -922,7 +1251,7 @@ flowchart TD
     F["5. Extract black markers"]
     G["6. Infer MCQ geometry"]
     H["7. Resolve anchors"]
-    I["8. Build SID/Code/MCQ ROI"]
+    I["8. Build SID/Code/MCQ/handwriting ROI"]
     J["9. Refine MCQ ROI"]
     K["10. Decode MSSV/mã đề"]
     L["11. Decode MCQ with map"]
@@ -930,7 +1259,7 @@ flowchart TD
     N["12. MCQ Map Search Rescue"]
     O["13. Detect Q5 drift/expand"]
     P["14. Compare answer key, score"]
-    Q["15. Draw overlay and save"]
+    Q["15. Draw overlay, save crop/telemetry"]
     R[/"JSON kết quả"/]
     A --> B --> C --> D --> E --> F --> G --> H --> I --> J --> K --> L --> M
     M -->|Có| N --> O
@@ -938,11 +1267,73 @@ flowchart TD
     O --> P --> Q --> R
 ```
 
+Pipeline trên được triển khai trong `process_omr_exam()` và các helper trong `be/app/services/omr/`. Mỗi bước biến đổi dữ liệu theo hướng từ ảnh gốc sang ảnh chuẩn, sau đó từ ROI sang kết quả nhận diện có thể tính điểm.
+
+**Bảng 4.11: Pipeline xử lý ảnh theo input/output**
+
+| Bước | Mục đích | Input | Output |
+|---|---|---|---|
+| Đọc ảnh | Nạp ảnh vào OpenCV | File ảnh upload | Ma trận ảnh BGR |
+| Crop/warp | Chuẩn hóa phối cảnh phiếu | Ảnh gốc, marker hoặc crop quad | Ảnh chuẩn theo kích thước profile |
+| Binarize | Tách vùng tô đen khỏi nền giấy | Ảnh xám | Ảnh nhị phân đảo màu |
+| Detect marker | Xác định vị trí phiếu và các anchor | Ảnh nhị phân | Tọa độ marker/anchor |
+| Build ROI | Tạo vùng MSSV, mã đề, MCQ, họ tên | Profile + marker + ảnh đã warp | Danh sách ROI post-warp |
+| Decode numeric | Đọc MSSV và mã đề | ROI số | `student_id`, `exam_code`, confidence |
+| Decode MCQ | Đọc đáp án từng câu | ROI MCQ, ảnh xám, ảnh nhị phân | Danh sách đáp án, câu không chắc chắn |
+| Rescue | Hiệu chỉnh lưới nếu nhiều câu không chắc chắn | Kết quả baseline + cấu hình `local_grid_search` | Kết quả MCQ tốt hơn nếu có |
+| Scoring | So sánh với đáp án | Kết quả decode + `answer_sets` | Điểm và chi tiết đúng/sai |
+| Save overlay | Tạo bằng chứng trực quan | Ảnh chuẩn + kết quả decode | Overlay, crop, confidence JSON |
+
 #### 4.3.3 Cấu hình Form Profile và ROI
 
-Form Profile là file JSON trong `storage/uploads/omr_data/profiles`. Backend đọc profile bằng `_resolve_profile()` và chuyển thành runtime config bằng `_build_runtime_config()`.
+Form Profile là file JSON trong `storage/uploads/omr_data/profiles`. Backend đọc profile bằng `_resolve_profile()` và chuyển thành runtime config bằng `_build_runtime_config()`. Profile giúp hệ thống hỗ trợ nhiều mẫu phiếu khác nhau mà không phải sửa lại pipeline chính. Profile chứa vị trí marker, vùng MSSV, vùng mã đề, vùng câu hỏi, vùng chữ viết tay và các tham số decode. Các ROI được hiểu theo hệ tọa độ của ảnh đã warp, không phải ảnh gốc.
 
-**Bảng 4.4: Tham số `mcq_decode` và ý nghĩa**
+Ở tab **Kho mẫu OMR**, hệ thống có chế độ cấu hình dành cho môi trường phát triển. Nút **Cấu hình ROI** chỉ hiển thị khi chạy Vite dev (`import.meta.env.DEV`) hoặc bật biến `VITE_ENABLE_OMR_PROFILE_EDITOR=true`. Component `OmrProfileRoiEditor.tsx` render trang đầu của PDF bằng `pdfjs-dist` hoặc vẽ ảnh PNG/JPG/WebP lên canvas, sau đó cho người cấu hình click bốn góc vùng họ tên (`ho_ten`). Bốn điểm có thể chọn theo thứ tự bất kỳ; frontend lấy bounding rectangle từ `min/max x/y` và lưu vào:
+
+```json
+{
+  "strategy": {
+    "handwriting_fields": {
+      "enabled": true,
+      "save_crops": true,
+      "field_rois": {
+        "ho_ten": { "x": 0.2302, "y": 0.0410, "w": 0.2992, "h": 0.0677 }
+      }
+    }
+  }
+}
+```
+
+Điểm quan trọng là ROI không được lưu theo toàn trang PDF, mà được quy đổi sang hệ tọa độ sau warp của backend. Backend chấm ảnh bằng cách warp phiếu về kích thước chuẩn `1000x1400` theo bốn marker đen, rồi mới crop `ho_ten`. Vì vậy frontend dùng `strategy.corner_markers` để quy đổi:
+
+```txt
+left   = avg(tl.cx, bl.cx)
+right  = avg(tr.cx, br.cx)
+top    = avg(tl.cy, tr.cy)
+bottom = avg(bl.cy, br.cy)
+x' = (x - left) / (right - left)
+y' = (y - top) / (bottom - top)
+w' = w / (right - left)
+h' = h / (bottom - top)
+```
+
+Khi mở lại editor, ROI đã lưu theo post-warp được quy đổi ngược về page-space để vẽ đúng vị trí trên PDF mẫu. Với profile 40 câu, ROI `ho_ten` sau quy đổi tương ứng khoảng `x=230, y=57, w=299, h=95` trên ảnh chuẩn `1000x1400`, đúng vùng họ tên khi kiểm thử với ảnh `20260418_121820_651438_camera_1776489482496.jpg`.
+
+**Bảng 4.12: Thành phần Form Profile và ROI**
+
+| Thành phần profile | Ý nghĩa |
+|---|---|
+| `corner_markers` | Vị trí 4 marker dùng để căn chỉnh và warp phiếu |
+| `crop_quad` | Tứ giác crop thủ công nếu cần cắt phiếu theo vùng chọn |
+| `sid_roi` | Vùng đọc MSSV bằng lưới số |
+| `exam_code_roi` | Vùng đọc mã đề |
+| `mcq_roi` | Vùng chứa câu hỏi trắc nghiệm |
+| `mcq_decode` | Nhóm ngưỡng và tham số nhận diện bong bóng |
+| `handwriting_fields` | Vùng crop chữ viết tay như `ho_ten`, phục vụ lưu crop và hướng mở rộng OCR |
+
+Khi thêm mẫu phiếu mới, bước chính là tạo profile mới hoặc cập nhật ROI trong profile. Pipeline vẫn dùng cùng hàm `process_omr_exam()`, chỉ thay đổi runtime config được dựng từ profile tại thời điểm chấm.
+
+**Bảng 4.13: Tham số `mcq_decode` và ý nghĩa**
 
 | Tham số | Ý nghĩa |
 |---|---|
@@ -973,30 +1364,31 @@ flowchart TD
 
 #### 4.3.5 Kết quả đạt được
 
-Hệ thống đã triển khai các chức năng chính: đăng nhập/đăng ký, tạo và quản lý bài thi, cấu hình nhiều mã đề, chấm một ảnh, chấm hàng loạt tối đa 50 ảnh, Smart Camera Scanner, xem thống kê, xem chi tiết bản ghi và xuất Excel/PDF. Backend có endpoint `/api/omr/suggest-crop` để gợi ý tứ giác crop; giao diện hiện tại ưu tiên căn chỉnh tự động bằng marker và Form Profile.
+Hệ thống đã triển khai các chức năng chính: đăng nhập/đăng ký, tạo và quản lý bài thi, cấu hình nhiều mã đề, chấm một ảnh, chấm hàng loạt tối đa 50 ảnh, Smart Camera Scanner, xem thống kê, xem chi tiết bản ghi và xuất Excel/PDF. Backend có endpoint `/api/omr/suggest-crop` để gợi ý tứ giác crop; giao diện hiện tại ưu tiên căn chỉnh tự động bằng marker và Form Profile. Ngoài luồng người dùng chính, hệ thống có ROI editor dành cho dev để cấu hình nhanh vùng chữ viết tay `ho_ten` trên từng phiếu mẫu.
 
 ### 4.4 Kiểm thử
 
-**Bảng 4.6: Kết quả kiểm thử chức năng**
+**Bảng 4.14: Kết quả kiểm thử chức năng**
 
-| Mã TC | Chức năng | Đầu vào | Kết quả kỳ vọng | Kết quả thực tế |
-|---|---|---|---|---|
-| TC-AUTH-01 | Đăng nhập hợp lệ | Email/password đúng | Redirect `/home`, lưu user vào `localStorage` | Đạt |
-| TC-AUTH-02 | Đăng nhập sai | Password sai | Thông báo lỗi xác thực | Đạt |
-| TC-ASSIGN-01 | Tạo bài thi | Title + profile | Bài thi xuất hiện trong danh sách | Đạt |
-| TC-ASSIGN-02 | Thêm mã đề | code = `001` | Mã đề xuất hiện trong tab đáp án | Đạt |
-| TC-GRADE-01 | Chấm 1 ảnh | Ảnh phiếu chuẩn | Có điểm, MSSV, mã đề, overlay | Đạt |
-| TC-GRADE-02 | Chấm ảnh có câu không rõ | Bong bóng tô mờ | Ghi `uncertain_count`, kích hoạt rescue nếu vượt ngưỡng | Đạt |
-| TC-BATCH-01 | Batch hợp lệ | 5 ảnh | `success_count = 5` | Đạt |
-| TC-BATCH-02 | Batch có ảnh lỗi | 4 ảnh đúng + 1 ảnh lỗi | `success_count = 4`, `failed_count = 1` | Đạt |
-| TC-CAM-01 | Bật camera | HTTPS/localhost | Video hiển thị, scanner searching/locked | Đạt |
-| TC-EXPORT-01 | Xuất Excel/PDF | Có bản ghi | Tải file `.xlsx` hoặc `.pdf` | Đạt |
+| Mã TC | Chức năng | Module liên quan | Đầu vào | Kết quả kỳ vọng | Kết quả thực tế |
+|---|---|---|---|---|---|
+| TC-AUTH-01 | Đăng nhập hợp lệ | `auth.py`, `LoginPage.tsx` | Email/password đúng | Redirect `/home`, lưu user vào `localStorage` | Đạt |
+| TC-AUTH-02 | Đăng nhập sai | `auth.py`, `LoginPage.tsx` | Password sai | Thông báo lỗi xác thực | Đạt |
+| TC-ASSIGN-01 | Tạo bài thi | `assignments.py`, `MultichoicePage.tsx` | Title + profile | Bài thi xuất hiện trong danh sách | Đạt |
+| TC-ASSIGN-02 | Thêm mã đề | `assignments.py`, `answer_sets` | code = `001` | Mã đề xuất hiện trong tab đáp án | Đạt |
+| TC-GRADE-01 | Chấm 1 ảnh | `grading.py`, `omr_service.py`, `omr_mcq.py` | Ảnh phiếu chuẩn | Có điểm, MSSV, mã đề, overlay | Đạt |
+| TC-GRADE-02 | Chấm ảnh có câu không rõ | `omr_service.py`, `omr_mcq.py` | Bong bóng tô mờ | Ghi `uncertain_count`, kích hoạt rescue nếu vượt ngưỡng | Đạt |
+| TC-ROI-01 | Cấu hình ROI họ tên | `OmrProfileRoiEditor.tsx`, `profiles.py`, `omr_handwriting.py` | Profile 40 câu + ảnh `20260418_121820_651438_camera_1776489482496.jpg` | Crop `ho_ten` nằm đúng vùng họ tên, ROI post-warp khoảng `230,57,299,95` | Đạt |
+| TC-BATCH-01 | Batch hợp lệ | `grading.py`, `omr_service.py` | 5 ảnh | `success_count = 5` | Đạt |
+| TC-BATCH-02 | Batch có ảnh lỗi | `grading.py` | 4 ảnh đúng + 1 ảnh lỗi | `success_count = 4`, `failed_count = 1`, lỗi nằm trong `results` | Đạt |
+| TC-CAM-01 | Bật camera | `MultichoicePage.tsx`, WebRTC MediaDevices API | HTTPS/localhost | Video hiển thị, scanner searching/locked | Đạt |
+| TC-EXPORT-01 | Xuất Excel/PDF | `ExportPanel.tsx`, `grade_results.py` | Có bản ghi | Tải file `.xlsx` hoặc `.pdf` | Đạt |
 
 ### 4.5 Triển khai hệ thống
 
 #### 4.5.1 Môi trường triển khai
 
-**Bảng 4.7: Cấu hình triển khai hệ thống**
+**Bảng 4.15: Cấu hình triển khai hệ thống**
 
 | Thành phần | Cấu hình thực tế | Ghi chú |
 |---|---|---|
@@ -1007,6 +1399,7 @@ Hệ thống đã triển khai các chức năng chính: đăng nhập/đăng k�
 | Database | PostgreSQL | Mặc định `postgresql://postgres:1111@localhost:5432/postgres`, đổi bằng `DATABASE_URL` |
 | Runtime storage | `storage/uploads`, `storage/logs` | Khai báo trong `be/app/core/paths.py` |
 | Static files | `/static` | FastAPI mount `storage/uploads` |
+| AWS production dự kiến | S3, CloudFront, ALB, ECS/Fargate hoặc EC2, RDS PostgreSQL | Tách frontend, backend, database và object storage |
 
 #### 4.5.2 Quy trình chạy hệ thống
 
@@ -1035,32 +1428,70 @@ Khi truy cập từ điện thoại trong LAN, cần dùng HTTPS hoặc localhos
 ```txt
 storage/
 ├── uploads/
-│   ├── answer_keys/omr/
-│   ├── omr/
+│   ├── answer_keys/omr/      # file đáp án tạm, xóa sau khi parse
+│   ├── omr/                  # ảnh upload, overlay, crop, confidence JSON, ZIP
 │   ├── omr_data/profiles/
-│   ├── omr_templates/
+│   ├── omr_templates/        # ảnh/PDF template
 │   └── temp/
 └── logs/
 ```
 
 Các thư mục runtime được tạo tự động bởi `ensure_runtime_dirs()` khi backend khởi động.
 
+**Bảng 4.16: File runtime và storage**
+
+| Loại file | Vị trí lưu | Mục đích |
+|---|---|---|
+| Ảnh upload | `storage/uploads/omr/` | Lưu ảnh gốc người dùng gửi để chấm |
+| Ảnh overlay | `storage/uploads/omr/` | Hiển thị kết quả chấm trực quan trên frontend |
+| Crop MSSV | `storage/uploads/omr/` | Kiểm tra vùng nhận diện MSSV |
+| Crop MCQ | `storage/uploads/omr/` | Kiểm tra vùng câu hỏi trắc nghiệm |
+| Confidence JSON | `storage/uploads/omr/` | Lưu điểm tin cậy, score từng bong bóng và thông tin câu không chắc chắn |
+| ZIP batch | `storage/uploads/omr/` | Gom overlay của nhiều ảnh để tải về sau khi chấm hàng loạt |
+| Template | `storage/uploads/omr_templates/` | Lưu ảnh/PDF mẫu phiếu |
+| Profile JSON | `storage/uploads/omr_data/profiles/` | Lưu cấu hình ROI, marker và tham số xử lý ảnh |
+| File đáp án tạm | `storage/uploads/answer_keys/omr/` | Lưu file đáp án upload trong quá trình parse |
+| Log | `storage/logs/` | Lưu log runtime của backend |
+
+#### 4.5.4 Định hướng triển khai trên AWS
+
+Khi chuyển từ môi trường local/LAN sang AWS, kiến trúc triển khai nên tách rõ phần tĩnh, API, cơ sở dữ liệu và file runtime:
+
+* **Frontend:** build React bằng `npm run build`, upload thư mục `dist` lên Amazon S3 và phân phối qua CloudFront. CloudFront gắn chứng chỉ TLS từ AWS Certificate Manager để đảm bảo HTTPS cho camera browser.
+* **Backend:** đóng gói FastAPI thành Docker image và chạy trên ECS/Fargate hoặc EC2 sau Application Load Balancer. Uvicorn/Gunicorn phục vụ API, health check đặt qua ALB.
+* **Database:** dùng Amazon RDS PostgreSQL thay cho PostgreSQL local. Biến `DATABASE_URL` được cấu hình qua Secrets Manager hoặc Parameter Store, không ghi trực tiếp trong repo.
+* **Runtime file:** các file lớn trong `storage/uploads` nên chuyển sang S3 object storage. SQL chỉ lưu metadata và object key/URL; không lưu ảnh, PDF, ZIP hoặc JSON telemetry lớn trực tiếp trong database.
+* **Static URL:** `/static/...` trong local có thể được thay bằng CloudFront/S3 URL hoặc một endpoint backend ký URL truy cập. Điều này giúp nhiều backend instance cùng đọc/ghi một kho file chung.
+* **Quan sát và vận hành:** log backend gửi CloudWatch Logs; metric cơ bản gồm số request chấm bài, thời gian xử lý trung bình, số lỗi decode và dung lượng S3. Batch lớn có thể tách sang SQS + worker để tránh request HTTP chạy quá lâu.
+
 ---
 
 ## CHƯƠNG 5. CÁC GIẢI PHÁP VÀ ĐÓNG GÓP NỔI BẬT
+
+Chương này tập trung vào các vấn đề kỹ thuật đã gặp trong quá trình triển khai và cách hệ thống được chỉnh sửa trong code. Mỗi giải pháp được trình bày theo chuỗi: vấn đề thực tế, nguyên nhân kỹ thuật, module đã sửa, cách sửa hoạt động và test case liên quan.
 
 ### 5.1 Cơ chế MCQ Map Search Rescue - Tự động hiệu chỉnh lưới câu hỏi
 
 #### 5.1.1 Vấn đề gặp phải
 
-Trong thực tế, giáo viên chụp ảnh phiếu trong nhiều điều kiện khác nhau: ánh đèn huỳnh quang chênh lệch, ảnh chụp hơi nghiêng, học sinh tô không đủ đậm hoặc có vết tẩy xóa. Pipeline xử lý ảnh ban đầu có thể không phân biệt được một số bong bóng là tô hay không tô (`uncertain_count > 0`). Nếu trả về kết quả này cho giáo viên, điểm số sẽ không chính xác.
+Trong thực tế, giáo viên chụp ảnh phiếu trong nhiều điều kiện khác nhau: ánh đèn huỳnh quang chênh lệch, ảnh chụp hơi nghiêng, học sinh tô không đủ đậm hoặc có vết tẩy xóa. Sau khi warp phiếu về ảnh chuẩn, lưới MCQ đôi khi vẫn bị lệch vài pixel theo chiều dọc hoặc khoảng cách dòng, làm nhiều câu bị đọc là không chắc chắn (`uncertain_count` cao) hoặc tô nhiều đáp án giả.
 
-#### 5.1.2 Giải pháp
+#### 5.1.2 Nguyên nhân kỹ thuật
 
-Hệ thống triển khai **MCQ Map Search Rescue** trực tiếp trong `be/app/services/omr/omr_service.py`. Khi số câu không chắc chắn của `_decode_mcq_with_map()` vượt ngưỡng `search_uncertain_gate`, service không chạy lại toàn bộ pipeline mà chỉ thử các biến thể hình học của lưới MCQ:
+Profile chỉ cung cấp ROI và tham số hình học ban đầu. Với ảnh chụp thực tế, bốn marker và vùng giấy có thể không khớp hoàn toàn với mẫu lý tưởng, khiến `line_h`, `top_center_y` hoặc ranh giới block MCQ bị lệch. Nếu chỉ decode một lần theo baseline, `_decode_mcq_with_map()` có thể lấy mẫu bong bóng sai tâm, đặc biệt ở các câu giữa/cuối block.
+
+#### 5.1.3 Cách sửa trong code
+
+Phần sửa nằm trong `be/app/services/omr/omr_service.py`, tại luồng `process_omr_exam()`. Sau lần decode MCQ baseline, hệ thống tính:
+
+```python
+search_uncertain_gate = max(4, round(0.60 * questions))
+```
+
+Nếu `initial_uncertain >= search_uncertain_gate`, service kích hoạt MCQ Map Search Rescue. Cơ chế này không chạy lại toàn bộ pipeline, mà chỉ thử các biến thể hình học của lưới MCQ:
 
 * Điều chỉnh `line_h` theo nhiều hệ số scale để khớp khoảng cách dòng thực tế.
-* Dịch `top_center_y` theo các offset nhỏ để sửa sai lệch dòng đầu tiên.
+* Dịch `top_center_y` bằng các `top_shift_px` nhỏ để sửa sai lệch dòng đầu tiên.
 * Tận dụng `block_bands` nếu marker nội bộ cho phép suy luận ranh giới từng block câu hỏi.
 * So sánh ứng viên bằng chất lượng decode, ưu tiên giảm `uncertain_questions` và `double_mark_questions`.
 
@@ -1071,6 +1502,8 @@ rank = (uncertain_count, double_mark_count, -quality_score)
 ```
 
 Ứng viên có `rank` nhỏ hơn baseline được chọn. Nếu không có ứng viên cải thiện, kết quả ban đầu được giữ lại và metadata ghi lý do `no-better-candidate` hoặc `below-uncertain-gate`.
+
+Khi tìm được ứng viên tốt hơn, `omr_service.py` cập nhật `mcq_result`, ghi `MCQ_MAP_SEARCH_RESCUE` vào `warning_codes` và lưu metadata như `line_h_after`, `top_shift_px`, `initial_uncertain`, `final_uncertain`. Nhờ đó kết quả trả về không chỉ có điểm mà còn có bằng chứng về việc cơ chế rescue đã được dùng.
 
 **Hình 5.1: Luồng MCQ Map Search Rescue**
 
@@ -1087,15 +1520,23 @@ flowchart TD
     G -->|Không| Z
 ```
 
+#### 5.1.4 Kết quả sau khi sửa
+
+Khi ảnh bị lệch nhẹ và số câu không chắc chắn vượt ngưỡng, hệ thống có thêm cơ hội sửa lưới MCQ thay vì trả ngay kết quả baseline. Nếu rescue cải thiện được rank, số câu không chắc chắn giảm và bảng đáp án trả về ổn định hơn; nếu không cải thiện, baseline vẫn được giữ lại để tránh thay đổi sai. Test liên quan là `TC-GRADE-02`, trong đó ảnh có bong bóng tô mờ phải ghi `uncertain_count` và kích hoạt rescue khi vượt ngưỡng.
+
 ### 5.2 Thuật toán tính điểm bong bóng tổng hợp
 
 #### 5.2.1 Vấn đề gặp phải
 
 Phương pháp đơn giản nhất để xác định bong bóng đã tô là đếm số pixel đen trong ô (`countNonZero`). Tuy nhiên, phương pháp này có độ chính xác thấp khi bong bóng tô mờ hoặc khi nền ảnh không hoàn toàn trắng sau khi nhị phân hóa.
 
-#### 5.2.2 Giải pháp
+#### 5.2.2 Nguyên nhân kỹ thuật
 
-Hệ thống dùng công thức tổng hợp kết hợp mật độ pixel nhị phân và thông tin từ ảnh xám gốc:
+Ảnh camera có ánh sáng không đều, bóng giấy, nhiễu từ đường kẻ và nét tô không đồng nhất. Threshold nhị phân có thể làm mất nét tô mờ hoặc phóng đại vùng nhiễu. Nếu chỉ dựa vào số pixel đen, một ô bị đường kẻ chạy qua hoặc nền tối cục bộ có thể có score gần giống ô thật sự được tô.
+
+#### 5.2.3 Cách sửa trong code
+
+Phần sửa nằm trong `be/app/services/omr/omr_mcq.py`, chủ yếu ở các hàm `_cell_density()`, `_cell_score()`, `_row_candidate_quality()` và `_decode_mcq_with_map()`. Thay vì chỉ dùng pixel đen, hệ thống dùng công thức tổng hợp kết hợp mật độ pixel nhị phân và thông tin từ ảnh xám gốc:
 
 ```
 cell_score = 0.90 × density + 0.10 × darkness
@@ -1119,13 +1560,33 @@ quality = 1.10 × best_score + 1.45 × margin + 0.25 × best_center + 0.12 × be
 
 Trong đó `margin` là khoảng cách giữa điểm cao nhất và nhì, `left_penalty` phạt nếu ô đầu tiên (cột A) có điểm cao nhưng biên độ quá nhỏ (thường là nhiễu từ đường kẻ trái).
 
+Các đại lượng có ý nghĩa như sau:
+
+| Đại lượng | Ý nghĩa |
+|---|---|
+| `density` | Tỷ lệ pixel đen trong vùng bong bóng sau nhị phân hóa |
+| `darkness` | Độ tối tổng hợp từ ảnh xám, giúp giữ tín hiệu tô mờ |
+| `margin` | Khoảng cách giữa đáp án tốt nhất và đáp án đứng thứ hai |
+| `best_score` | Điểm density của lựa chọn tốt nhất |
+| `best_center` | Mật độ vùng trung tâm, giảm nhiễu từ viền ô |
+| `best_dark` | Độ tối bổ sung từ ảnh xám |
+| `left_penalty` | Hình phạt cho nhiễu ở cột A khi biên độ không đủ rõ |
+
+#### 5.2.4 Kết quả sau khi sửa
+
+Cách tính mới giúp hệ thống ổn định hơn với bong bóng tô nhẹ, vì ảnh xám gốc vẫn đóng góp một phần vào score khi ảnh nhị phân bị mất nét. Đồng thời `margin`, `best_center` và `left_penalty` giúp hạn chế chọn nhầm do đường kẻ hoặc vết bẩn. Test liên quan gồm `TC-GRADE-01` với ảnh phiếu chuẩn và `TC-GRADE-02` với ảnh có câu không rõ.
+
 ### 5.3 Smart Camera Scanner trên trình duyệt
 
 #### 5.3.1 Vấn đề gặp phải
 
 Để chụp và chấm phiếu nhanh chóng từng tờ một, giáo viên cần giao diện camera trực tiếp trên điện thoại không cần cài ứng dụng native. Việc phát hiện khi nào phiếu đã được đặt đúng vị trí (không nghiêng, đủ 4 góc) là thách thức kỹ thuật cần giải quyết hoàn toàn phía client.
 
-#### 5.3.2 Giải pháp
+#### 5.3.2 Nguyên nhân kỹ thuật
+
+Trình duyệt chỉ cho phép dùng camera qua `navigator.mediaDevices.getUserMedia` trong secure context như HTTPS hoặc localhost. Ngoài ra, frontend không thể chạy toàn bộ pipeline OpenCV nặng như backend để chấm ngay trên video frame. Vì vậy cần một bộ kiểm tra nhẹ ở client để quyết định khi nào ảnh đủ điều kiện chụp: nhìn thấy giấy, đủ 4 marker tối, marker có tương phản với nền và trạng thái ổn định qua nhiều frame.
+
+#### 5.3.3 Cách sửa trong code
 
 Hệ thống triển khai thuật toán phát hiện marker tại hàm `evaluateAlignment()` trong `MultichoicePage.tsx`. Mỗi 130ms, thuật toán phân tích một frame video:
 
@@ -1146,6 +1607,12 @@ Hệ thống triển khai thuật toán phát hiện marker tại hàm `evaluate
 6. Sau 4 frame liên tiếp thỏa điều kiện → trạng thái `"locked"`, khung chuyển xanh.
 7. Sau 1300ms duy trì `"locked"` → tự động chụp JPEG (quality = 0.92) và gọi API.
 
+Luồng camera dùng `navigator.mediaDevices.getUserMedia` với camera sau nếu có. Frame video được vẽ lên canvas ẩn, sau đó frontend chỉ tính toán các đại lượng đơn giản như `centerLuma`, `darkRatio` và `markerLuma`. Cách làm này đủ nhẹ để chạy trên điện thoại và vẫn tận dụng cùng Form Profile với backend, vì vị trí marker được lấy từ profile đang chọn.
+
+#### 5.3.4 Kết quả sau khi sửa
+
+Smart Camera Scanner cho phép giáo viên căn phiếu trong khung và để hệ thống tự chụp khi đủ điều kiện. Khi môi trường không phải HTTPS/localhost, frontend hiển thị lỗi rõ ràng và người dùng vẫn có thể dùng chế độ tải ảnh từ thư viện. Test liên quan là `TC-CAM-01`, kiểm tra video hiển thị, trạng thái `searching/locked` và điều kiện tự chụp.
+
 ---
 
 ## CHƯƠNG 6. KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN
@@ -1158,14 +1625,15 @@ Hệ thống triển khai thuật toán phát hiện marker tại hàm `evaluate
 - Pipeline xử lý ảnh 15 bước hoạt động ổn định với ảnh chụp điện thoại trong nhiều điều kiện ánh sáng và góc chụp khác nhau.
 - Cơ chế MCQ Map Search Rescue tự động hiệu chỉnh lưới câu hỏi khi phát hiện nhiều bong bóng không rõ ràng.
 - Smart Camera Scanner phát hiện phiếu theo thời gian thực và tự động chụp mà không cần thao tác của người dùng.
-- Module crop vùng chữ viết tay đã sẵn sàng để thu thập dữ liệu và tích hợp OCR/học sâu ở phiên bản sau.
+- Module crop vùng chữ viết tay đã hỗ trợ ROI `ho_ten` theo profile và sẵn sàng để thu thập dữ liệu, tích hợp OCR/học sâu ở phiên bản sau.
+- Dữ liệu lịch sử chấm đã được tách sang bảng `omr_grade_result`, giúp quản lý nhiều lượt chấm ổn định hơn so với chỉ lưu trong `last_result`.
 
 **Về tính thực tiễn:**
 - Hệ thống không yêu cầu phần cứng đặc biệt, chỉ cần điện thoại thông minh và kết nối mạng LAN.
 - Giao diện mobile-first dễ sử dụng, hỗ trợ đầy đủ tiếng Việt.
 - Hỗ trợ xuất dữ liệu Excel và PDF, dễ tích hợp với quy trình quản lý điểm hiện có.
 
-**23 trong 23 test case** được thiết kế đều đạt kết quả như kỳ vọng trong môi trường kiểm thử.
+Các test case chức năng chính được thiết kế đều đạt kết quả như kỳ vọng trong môi trường kiểm thử.
 
 ### 6.2 Hướng phát triển
 
@@ -1178,16 +1646,19 @@ Hệ thống triển khai thuật toán phát hiện marker tại hàm `evaluate
 #### 6.2.2 Cải thiện hiệu năng
 
 - Xử lý batch song song thay vì tuần tự bằng `asyncio.gather` hoặc Celery task queue, giảm thời gian chờ khi tải lên nhiều ảnh.
-- Cache Form Profile trong memory thay vì đọc file JSON mỗi request.
+- Cache Form Profile trong memory hoặc Redis, đồng thời invalidate cache khi dev/editor lưu profile mới.
+- Tách xử lý batch dài sang hàng đợi SQS/Celery worker khi triển khai cloud để tránh timeout HTTP.
 
 #### 6.2.3 Tăng cường bảo mật
 
 - Tích hợp JWT (JSON Web Token) với refresh token để xác thực không lưu trong `localStorage`.
 - Thêm rate limiting cho API endpoint chấm điểm để ngăn lạm dụng.
+- Hash mật khẩu bằng bcrypt/argon2 và lưu secret trong AWS Secrets Manager hoặc Parameter Store khi triển khai production.
 
 #### 6.2.4 Mở rộng tính năng
 
-- Triển khai HTTPS với Caddy hoặc Nginx để hỗ trợ camera live trên mạng LAN.
+- Triển khai production trên AWS với S3 + CloudFront cho frontend/static file, RDS PostgreSQL cho database và ECS/Fargate hoặc EC2 cho backend FastAPI.
+- Chuyển runtime file từ `storage/uploads` cục bộ sang S3, đồng thời giữ SQL làm nguồn sự thật cho metadata và kết quả nghiệp vụ.
 - Thêm tính năng so sánh kết quả nhiều bài thi (thống kê lớp học) và biểu đồ phân phối điểm.
 - Xây dựng mobile app native (React Native hoặc Flutter) để tối ưu hơn trải nghiệm camera.
 - Hỗ trợ tích hợp API cho hệ thống quản lý học tập (LMS) như Moodle.

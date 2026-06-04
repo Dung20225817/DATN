@@ -1467,6 +1467,87 @@
   display: block;
 }
 
+.roi-editor-dialog {
+  width: min(1120px, 100%);
+}
+
+.roi-editor-head {
+  align-items: center;
+}
+
+.roi-editor-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #6c8094;
+}
+
+.roi-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.roi-editor-actions .mini-btn,
+.roi-editor-actions .primary-btn,
+.roi-editor-actions .header-back-btn {
+  min-height: 38px;
+  width: auto;
+  padding: 0 12px;
+}
+
+.roi-editor-body {
+  min-height: 300px;
+  height: min(74dvh, 760px);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: #f6f9fc;
+}
+
+.roi-editor-toolbar {
+  min-height: 44px;
+  border-bottom: 1px solid #dce8f3;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #284962;
+  font-size: 13px;
+}
+
+.roi-editor-toolbar code {
+  padding: 4px 7px;
+  border: 1px solid #cfe0ef;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #0f766e;
+  font-size: 12px;
+  white-space: normal;
+}
+
+.roi-editor-canvas-wrap {
+  overflow: auto;
+  padding: 14px;
+  display: grid;
+  place-items: start center;
+}
+
+.roi-editor-canvas {
+  max-width: 100%;
+  height: auto;
+  background: #ffffff;
+  border: 1px solid #bfd3e5;
+  box-shadow: 0 8px 22px rgba(30, 52, 74, 0.18);
+  cursor: crosshair;
+  touch-action: manipulation;
+}
+
+.roi-editor-canvas.hidden {
+  display: none;
+}
+
 .home-list-wrap {
   display: grid;
   gap: 10px;

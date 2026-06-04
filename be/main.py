@@ -18,6 +18,7 @@ from app.api import auth
 from app.api.omr import router as omr_router
 from app.db.session import engine, Base
 from app.db.models import user, omr  # noqa: F401 - import to register models
+from app.db.migrations import ensure_runtime_schema
 
 # Setup logging
 setup_logging(level=logging.INFO)
@@ -34,6 +35,7 @@ class UnicodeJSONResponse(JSONResponse):
 
 # Create database tables if they don't exist
 Base.metadata.create_all(bind=engine)
+ensure_runtime_schema(engine)
 logger.info("Database tables initialized")
 
 # Initialize FastAPI app
