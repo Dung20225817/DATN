@@ -1,15 +1,17 @@
 :80 {
-    encode gzip zstd
+	encode gzip zstd
 
-    handle /api/* {
-        reverse_proxy backend:8000
-    }
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
 
-    handle /static/* {
-        reverse_proxy backend:8000
-    }
+	handle /static/* {
+		reverse_proxy backend:8000
+	}
 
-    root * /usr/share/caddy
-    try_files {path} /index.html
-    file_server
+	handle {
+		root * /usr/share/caddy
+		try_files {path} /index.html
+		file_server
+	}
 }
