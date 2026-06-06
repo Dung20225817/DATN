@@ -123,19 +123,22 @@ docker compose --env-file .env.docker up --build
 
 ## Use External PostgreSQL
 
-For production with an external database, set `DATABASE_URL` directly for the backend service or add it to an override Compose file.
+For production with an external database, use a Compose override file so the backend points at the external database and no longer waits for the Compose `db` service.
 
-Example backend environment:
+Create `docker-compose.external-db.yml`. The `!reset []` form clears the `backend` dependency on the Compose `db` service from the base file.
 
 ```yaml
-environment:
-  DATABASE_URL: postgresql://user:password@db-host:5432/ocr_crnn
-  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-  PYTHONUNBUFFERED: "1"
+services:
+  backend:
+    depends_on: !reset []
+    environment:
+      DATABASE_URL: postgresql://user:password@db-host:5432/ocr_crnn
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      PYTHONUNBUFFERED: "1"
 ```
 
 Then run only backend and frontend if the Compose `db` service is not needed:
 
 ```powershell
-docker compose --env-file .env.docker up --build backend frontend
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.external-db.yml up --build backend frontend
 ```
