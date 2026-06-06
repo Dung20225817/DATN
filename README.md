@@ -125,6 +125,27 @@ npm run dev
 
 Frontend chạy mặc định tại `https://localhost:5173`.
 
+## Chạy bằng Docker
+
+Docker Compose chay 3 service:
+
+- `db`: PostgreSQL 16, luu du lieu trong volume `pgdata`.
+- `backend`: FastAPI, tu tao bang khi khoi dong neu database trong.
+- `frontend`: Caddy phuc vu React build va reverse proxy `/api/*`, `/static/*` ve backend.
+
+```powershell
+Copy-Item .env.docker.example .env.docker
+docker compose --env-file .env.docker up --build
+```
+
+Sau khi chay:
+
+- Frontend: `http://localhost:8080`
+- Backend: `http://localhost:8000`
+- Health check: `http://localhost:8000/health`
+
+Huong dan chi tiet ve cau hinh, backup, restore, reset du lieu va dung database ben ngoai nam trong `docs/DOCKER_DEPLOYMENT.md`.
+
 ## Kiểm thử
 
 ```bash
