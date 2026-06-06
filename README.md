@@ -144,7 +144,7 @@ Sau khi chay:
 - Backend: `http://localhost:8000`
 - Health check: `http://localhost:8000/health`
 
-Huong dan chi tiet ve cau hinh, backup, restore, reset du lieu va dung database ben ngoai nam trong `docs/DOCKER_DEPLOYMENT.md`.
+Huong dan chi tiet ve cau hinh, backup, restore, reset du lieu va dung database ben ngoai nam trong [docs/DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md).
 
 ## Kiểm thử
 
