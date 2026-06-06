@@ -10,8 +10,16 @@ PostgreSQL should stay in its own container. Do not install PostgreSQL inside th
 
 ## First Run
 
+PowerShell:
+
 ```powershell
 Copy-Item .env.docker.example .env.docker
+```
+
+Linux/macOS:
+
+```sh
+cp .env.docker.example .env.docker
 ```
 
 Edit `.env.docker` before production use:
@@ -26,10 +34,10 @@ Start the stack:
 docker compose --env-file .env.docker up --build
 ```
 
-Open:
+Open these default URLs if the default ports are unchanged:
 
-- Frontend: `http://localhost:8080`
-- Backend health check: `http://localhost:8000/health`
+- Frontend default: `http://localhost:8080`
+- Backend health check default: `http://localhost:8000/health`
 
 ## Why PostgreSQL Is In Compose
 
@@ -51,8 +59,16 @@ Expected service state:
 
 Check backend:
 
+PowerShell:
+
 ```powershell
 Invoke-WebRequest http://localhost:8000/health
+```
+
+Linux/macOS:
+
+```sh
+curl http://localhost:8000/health
 ```
 
 Expected response body:
@@ -101,20 +117,30 @@ docker compose --env-file .env.docker up -d
 ## Backup PostgreSQL
 
 ```powershell
-docker compose --env-file .env.docker exec db pg_dump -U ocr -d ocr_crnn > backup_ocr_crnn.sql
+docker compose --env-file .env.docker exec -T db pg_dump -U ocr -d ocr_crnn > backup_ocr_crnn.sql
 ```
 
 ## Restore PostgreSQL
 
 Use this only with a database that is ready to receive the restore.
 
+PowerShell:
+
 ```powershell
 Get-Content backup_ocr_crnn.sql | docker compose --env-file .env.docker exec -T db psql -U ocr -d ocr_crnn
 ```
 
-## Reset Local Demo Data
+Linux/macOS:
 
-This deletes PostgreSQL data. Use it only for local/demo reset.
+```sh
+cat backup_ocr_crnn.sql | docker compose --env-file .env.docker exec -T db psql -U ocr -d ocr_crnn
+```
+
+## Reset Local PostgreSQL Demo Data
+
+This deletes PostgreSQL data in the Docker volume `pgdata`. Use it only for local/demo database reset.
+
+Uploaded and runtime files under `./storage` remain. For a full demo reset, manually remove unneeded files under `./storage` after confirming they are safe to delete.
 
 ```powershell
 docker compose --env-file .env.docker down -v
@@ -125,14 +151,16 @@ docker compose --env-file .env.docker up --build
 
 For production with an external database, use a Compose override file so the backend points at the external database and no longer waits for the Compose `db` service.
 
-Create `docker-compose.external-db.yml`. The `!reset []` form clears the `backend` dependency on the Compose `db` service from the base file.
+Set `DATABASE_URL=postgresql://user:password@db-host:5432/ocr_crnn` in `.env.docker` or another uncommitted environment source.
+
+Create `docker-compose.external-db.yml`. The `!reset []` form clears the `backend` dependency on the Compose `db` service from the base file and requires a Docker Compose version that supports the reset tag.
 
 ```yaml
 services:
   backend:
     depends_on: !reset []
     environment:
-      DATABASE_URL: postgresql://user:password@db-host:5432/ocr_crnn
+      DATABASE_URL: ${DATABASE_URL}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       PYTHONUNBUFFERED: "1"
 ```
