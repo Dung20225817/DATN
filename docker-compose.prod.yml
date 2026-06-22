@@ -1,0 +1,33 @@
+# Production docker-compose cho EC2 — chỉ chạy backend.
+# DB là RDS (không có service db ở đây).
+# Frontend được host trên Vercel.
+#
+# Cách dùng trên EC2:
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  backend:
+    image: ${DOCKER_IMAGE:-yourdockerhub/ocr-crnn-backend}:latest
+    container_name: ocr-crnn-backend
+    restart: unless-stopped
+    env_file:
+      # File này tạo thủ công trên EC2 tại /home/ubuntu/ocr-crnn/.env.prod
+      # Xem .env.prod.example để biết các biến cần set
+      - .env.prod
+    volumes:
+      # Container path /workspace/storage khớp với be/app/core/paths.py:
+      #   STORAGE_ROOT = Path(__file__).parents[2] / "storage" = /workspace/storage
+      - /home/ubuntu/ocr-crnn/storage:/workspace/storage
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s

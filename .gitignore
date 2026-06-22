@@ -59,6 +59,8 @@ celerybeat-schedule
 .env.local
 .env.*
 !.env.example
+!.env.docker.example
+!.env.prod.example
 
 # IDEs
 .vscode/
@@ -103,3 +105,10 @@ DATN.md
 chapters/
 main.tex
 usecaseuml.md
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/terraform.tfvars
+# terraform/.terraform.lock.hcl KHÔNG gitignore — cần commit để pin provider version

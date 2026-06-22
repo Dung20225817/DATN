@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -54,10 +55,17 @@ logger.info("Upload directories initialized")
 # Mount static files for image serving
 app.mount("/static", StaticFiles(directory=str(UPLOADS_DIR)), name="static")
 
-# Configure CORS middleware - Allow localhost on all ports for development
+# CORS: allow localhost/LAN in dev + production domains via ALLOWED_ORIGINS env var.
+# Set ALLOWED_ORIGINS=https://your-project.vercel.app in .env.prod on EC2.
+_extra_origins: list[str] = [
+    o.strip()
+    for o in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+):\d+$",
+    allow_origins=_extra_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

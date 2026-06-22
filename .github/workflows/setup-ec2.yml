@@ -1,0 +1,63 @@
+name: Setup EC2
+
+# Chạy 1 lần sau khi terraform apply xong.
+# Cần có sẵn các Secrets: EC2_HOST, EC2_SSH_PRIVATE_KEY, DATABASE_URL,
+# GOOGLE_CLIENT_ID, VERCEL_URL, DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tạo .env.prod trên EC2 từ GitHub Secrets
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            mkdir -p /home/ubuntu/ocr-crnn
+            # Ghi .env.prod — các giá trị được inject từ GitHub Secrets lúc build workflow
+            cat > /home/ubuntu/ocr-crnn/.env.prod <<'ENVEOF'
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            ALLOWED_ORIGINS=${{ secrets.VERCEL_URL }}
+            DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/ocr-crnn-backend
+            ENVEOF
+            echo ".env.prod created"
+            cat /home/ubuntu/ocr-crnn/.env.prod
+
+      - name: Copy docker-compose.prod.yml lên EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          source: "docker-compose.prod.yml"
+          target: "/home/ubuntu/ocr-crnn/"
+
+      - name: Pull Docker image và khởi động backend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /home/ubuntu/ocr-crnn
+
+            # Đăng nhập DockerHub để pull private image (nếu repo private)
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | \
+              docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+
+            echo "Waiting for backend to start..."
+            sleep 15
+            curl -f http://localhost:8000/health && echo "Backend is healthy!"
