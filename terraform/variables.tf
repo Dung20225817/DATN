@@ -11,9 +11,9 @@ variable "project_name" {
 }
 
 variable "ec2_instance_type" {
-  description = "EC2 instance type. t3.medium = 2 vCPU + 4 GB RAM, đủ cho OpenCV workloads"
+  description = "EC2 instance type"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.micro"
 }
 
 variable "ec2_volume_size" {

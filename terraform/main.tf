@@ -91,11 +91,11 @@ resource "aws_security_group" "ec2" {
 
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-rds-sg"
-  description = "RDS: PostgreSQL chỉ từ EC2"
+  description = "RDS: PostgreSQL from EC2 only"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "PostgreSQL từ EC2"
+    description     = "PostgreSQL from EC2"
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
