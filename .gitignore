@@ -99,3 +99,7 @@ be/logs/
 # OS specific
 Thumbs.db
 .DS_Store
+DATN.md
+chapters/
+main.tex
+usecaseuml.md

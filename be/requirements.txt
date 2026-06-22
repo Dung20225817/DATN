@@ -1,7 +1,8 @@
 # ==================================================================================
 # OCR Grading System - Python Dependencies (Optimized)
 # Version: 3.10
-# Note: Some packages (torch, transformers, etc.) have many transitive dependencies
+# Note: Current backend uses deterministic OMR image processing (OpenCV/NumPy).
+# Unused AI/LLM runtimes are intentionally omitted.
 # ==================================================================================
 
 # Main Frameworks
@@ -21,26 +22,11 @@ numpy==2.2.6
 scikit-image==0.25.2
 Pillow==10.2.0
 
-# OCR & Computer Vision
-vietocr==0.3.13
-easyocr==1.7.2
-torch==2.9.1
-torchvision==0.24.1
-
-# Transformer-based OCR models (InternVL2 and related tokenizer/runtime)
-transformers>=4.44.0
-accelerate>=0.26.0       # device_map + mixed-precision loading
-sentencepiece>=0.1.99    # tokenizer for many VLM models
-
 # Text Processing
 python-docx==0.8.11
 pdfplumber==0.10.4
 PyPDF2==3.0.1
 Levenshtein==0.27.3
-
-# Deep Line Detection (optional — for DBNet/CRAFT pipeline)
-# DBNet : pip install mmocr mmcv-full   (requires torch match)
-# CRAFT : pip install craft-text-detector
 
 # NLP
 # underthesea==1.1.13  # DISABLED: Requires Visual C++ Build Tools
@@ -53,10 +39,3 @@ pandas==2.3.3
 tabulate==0.9.0
 charset-normalizer==3.4.4
 python-bidi==0.6.7
-
-# Note: Dependencies below are required by torch/transformers/huggingface
-# They are listed for reference but automatically installed:
-# - transformers, tokenizers (for VietOCR)
-# - scipy, scikit-learn (for image processing)
-# - Pillow, matplotlib (for visualization)
-# - tqdm, requests, filelock (for downloading models)

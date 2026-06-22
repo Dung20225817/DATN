@@ -4,7 +4,6 @@ import { API_CONFIG } from "../../../config/api";
 import ViewImageModal from "../../../components/ViewImageModal";
 import { getAuthUid } from "../../../utils/authStorage";
 import ExportPanel from "../components/ExportPanel";
-import OmrProfileRoiEditor from "../components/OmrProfileRoiEditor";
 import StatsPanel from "../components/StatsPanel";
 import "../styles/OmrMobileApp.css";
 import {
@@ -91,10 +90,15 @@ export default function MultichoicePage() {
   const [resultImageUrl, setResultImageUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [batchSummary, setBatchSummary] = useState<{
+    successCount: number;
+    failedCount: number;
+    totalCount: number;
+    zipUrl: string | null;
+  } | null>(null);
   const [viewImage, setViewImage] = useState<string | null>(null);
   const [selectedGradeRecordId, setSelectedGradeRecordId] = useState<string | null>(null);
   const [samplePreview, setSamplePreview] = useState<{ title: string; fileName: string; url: string } | null>(null);
-  const [roiEditorProfile, setRoiEditorProfile] = useState<FormProfile | null>(null);
 
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const previewUrlsRef = useRef<Set<string>>(new Set());
@@ -125,10 +129,6 @@ export default function MultichoicePage() {
     () => formProfiles.find((p) => p.code === newFormProfileCode) || null,
     [formProfiles, newFormProfileCode]
   );
-
-  const profileEditorEnabled = useMemo(() => {
-    return import.meta.env.DEV || import.meta.env.VITE_ENABLE_OMR_PROFILE_EDITOR === "true";
-  }, []);
 
   const selectedTestProfile = useMemo(() => {
     if (!selectedTest?.formProfileCode) return null;
@@ -517,6 +517,7 @@ export default function MultichoicePage() {
     setNavTab("home");
     setErrorMessage("");
     setSuccessMessage("");
+    setBatchSummary(null);
     setResultImageUrl(null);
     setViewImage(null);
     setSelectedGradeRecordId(null);
@@ -948,7 +949,10 @@ export default function MultichoicePage() {
             newRecords
           ),
         });
+        const zipUrl = toAbsoluteStaticUrl(payload.zip_url) ?? null;
+        const failedCount = Number(payload.failed_count ?? 0);
         clearPickedMedia();
+        setBatchSummary({ successCount, failedCount, totalCount: pickedFiles.length, zipUrl });
         setDetailTab("stats");
         setSuccessMessage(`Đã chấm batch ${successCount}/${pickedFiles.length} ảnh.`);
       } else {
@@ -1029,10 +1033,6 @@ export default function MultichoicePage() {
   }
 
   const buildSampleUrl = (sampleFile: string) => `${API_CONFIG.BASE_URL}/static/omr_data/${encodeURIComponent(sampleFile)}`;
-
-  function handleProfileSaved(nextProfile: FormProfile) {
-    setFormProfiles((prev) => prev.map((item) => (item.code === nextProfile.code ? nextProfile : item)));
-  }
 
   return (
     <div className="omr-mobile-shell">
@@ -1160,7 +1160,7 @@ export default function MultichoicePage() {
 
         {!isRecordDetailPage && !showDetail && navTab === "templates" && (
           <section className="omr-section">
-            <h4 className="home-list-title">Phiếu mẫu từ omr_data (dev cấu hình)</h4>
+            <h4 className="home-list-title">Phiếu mẫu sẵn có</h4>
             {formProfilesLoading && <div className="empty-box">Đang tải profile phiếu mẫu...</div>}
             {!formProfilesLoading && formProfiles.length === 0 && <div className="empty-box">Chưa có profile phiếu mẫu trong omr_data.</div>}
             {!formProfilesLoading && formProfiles.map((p) => (
@@ -1179,23 +1179,21 @@ export default function MultichoicePage() {
               >
                 <div>
                   <div className="test-title">{p.title}</div>
-                  <div className="test-sub">Mã đề: {Math.max(1, Number(p.exam_code_digits || 3))} số</div>
+                  <div className="test-sub">Mã đề: 3 số</div>
                   <div className="test-sub">MSSV: {Math.max(1, Number(p.student_id_digits || 6))} số</div>
                   <div className="test-sub">Câu mặc định: {p.default_questions} | Điểm mặc định: 10</div>
                 </div>
                 <div className="template-actions">
-                  {profileEditorEnabled && (
-                    <button
-                      type="button"
-                      className="mini-btn tap-feedback"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRoiEditorProfile(p);
-                      }}
-                    >
-                      Cấu hình ROI
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="mini-btn tap-feedback"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate("/admin");
+                    }}
+                  >
+                    → Admin
+                  </button>
                   <button
                     type="button"
                     className="mini-btn tap-feedback"
@@ -1422,7 +1420,30 @@ export default function MultichoicePage() {
             )}
 
             {detailTab === "stats" && (
-              renderStatsPanel("inline")
+              <>
+                {batchSummary && (
+                  <div className="batch-summary-banner">
+                    <span className="batch-summary-text">
+                      Batch: <strong>{batchSummary.successCount}/{batchSummary.totalCount}</strong> ảnh thành công
+                      {batchSummary.failedCount > 0 && (
+                        <span className="batch-failed-count"> · {batchSummary.failedCount} ảnh lỗi</span>
+                      )}
+                    </span>
+                    {batchSummary.zipUrl && (
+                      <a
+                        className="mini-btn template-download-btn batch-zip-btn"
+                        href={batchSummary.zipUrl}
+                        download
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        ⬇ Tải ZIP overlay
+                      </a>
+                    )}
+                  </div>
+                )}
+                {renderStatsPanel("inline")}
+              </>
             )}
 
             {detailTab === "export" && (
@@ -1548,17 +1569,6 @@ export default function MultichoicePage() {
             </div>
           </div>
         </div>
-      )}
-
-      {roiEditorProfile && (
-        <OmrProfileRoiEditor
-          profile={roiEditorProfile}
-          sampleUrl={buildSampleUrl(roiEditorProfile.sample_file)}
-          onClose={() => setRoiEditorProfile(null)}
-          onSaved={handleProfileSaved}
-          onError={setErrorMessage}
-          onSuccess={setSuccessMessage}
-        />
       )}
 
       {!!errorMessage && <div className="error-toast">{errorMessage}</div>}

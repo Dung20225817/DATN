@@ -1,0 +1,118 @@
+.admin-page-shell {
+  min-height: 100dvh;
+  background: #f7fafd;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: #fff;
+  border-bottom: 1px solid #dbe8f4;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.admin-back-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #1a73e8;
+  padding: 6px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.admin-back-btn:hover {
+  background: #e8f0fe;
+}
+
+.admin-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1b2f4e;
+  margin: 0;
+}
+
+.admin-main {
+  flex: 1;
+  padding: 18px 16px 40px;
+  max-width: 680px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.admin-create-bar {
+  margin-bottom: 12px;
+}
+
+.admin-create-form {
+  margin-bottom: 16px;
+  background: #fff;
+  border: 1px solid #dbe8f4;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.admin-field {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-field label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #1b4f72;
+}
+
+.admin-field input[type="text"],
+.admin-field input[type="number"],
+.admin-field select {
+  padding: 8px 10px;
+  border: 1px solid #c8ddf0;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  background: #f7fafd;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.admin-field-row {
+  flex-direction: row;
+  gap: 16px;
+}
+
+.admin-field-row > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-field-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-field-check label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 400;
+  color: #2c3e50;
+}
+
+.admin-file-name {
+  font-size: 0.82rem;
+  color: #1a73e8;
+  margin-top: 2px;
+}

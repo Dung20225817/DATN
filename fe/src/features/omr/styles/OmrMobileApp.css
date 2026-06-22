@@ -237,6 +237,35 @@
   font-weight: 600;
 }
 
+.batch-summary-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 10px 0 4px;
+  background: #f1f8ff;
+  border: 1px solid #b8d6ef;
+  border-radius: 10px;
+  font-size: 0.88rem;
+}
+
+.batch-summary-text {
+  color: #1b4f72;
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-failed-count {
+  color: #a12f2f;
+}
+
+.batch-zip-btn {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  padding: 0 12px;
+}
+
 .template-download-btn {
   text-decoration: none;
   display: inline-flex;

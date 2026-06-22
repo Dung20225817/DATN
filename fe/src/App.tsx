@@ -5,6 +5,7 @@ import RegisterPage from "./pages/RegisterPage";
 import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
 import MultichoicePage from "./features/omr/pages/MultichoicePage";
+import AdminPage from "./pages/AdminPage";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/home" element={<HomePage />} />
         <Route path="/multichoice" element={<MultichoicePage/>} />
         <Route path="/multichoice/record-detail/:testId/:recordId?" element={<MultichoicePage/>} />
+        <Route path="/admin" element={<AdminPage />} />
       </Routes>
     </Router>
   );

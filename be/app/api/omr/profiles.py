@@ -35,6 +35,19 @@ async def get_form_profile(code: str):
         raise HTTPException(status_code=404, detail="Không tìm thấy profile phiếu mẫu")
     return JSONResponse(content={"profile": profile})
 
+@router.post("/upload-form-sample")
+async def upload_form_sample(file: UploadFile = File(...)):
+    allowed = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail="Chỉ chấp nhận PDF, PNG, JPG, JPEG, WebP")
+    safe_name = re.sub(r"[^\w.\-]", "-", file.filename or "sample") if file.filename else f"sample{ext}"
+    dest = os.path.join(BASE_OMR_DATA_DIR, safe_name)
+    content = await file.read()
+    with open(dest, "wb") as f:
+        f.write(content)
+    return JSONResponse(content={"filename": safe_name})
+
 @router.post("/form-profiles")
 async def save_form_profile(payload: Dict[str, Any] = Body(...)):
     sample_file = os.path.basename(str(payload.get("sample_file") or "").strip())
