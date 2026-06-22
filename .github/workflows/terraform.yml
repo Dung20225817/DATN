@@ -6,7 +6,7 @@ on:
       action:
         description: 'Chọn plan (xem trước) hoặc apply (thực thi)'
         required: true
-        default: 'plan'
+        default: 'apply'
         type: choice
         options: [plan, apply]
 
