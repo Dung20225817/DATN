@@ -51,9 +51,11 @@ jobs:
             set -e
             cd /home/ubuntu/ocr-crnn
 
-            # Đăng nhập DockerHub để pull private image (nếu repo private)
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | \
               docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+            # docker-compose reads DOCKER_IMAGE from shell env for image: field substitution
+            export DOCKER_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ocr-crnn-backend"
 
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d

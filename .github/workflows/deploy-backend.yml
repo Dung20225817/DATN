@@ -68,6 +68,8 @@ jobs:
             set -e
             cd /home/ubuntu/ocr-crnn
 
+            export DOCKER_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/ocr-crnn-backend"
+
             # Pull image mới nhất từ DockerHub
             docker compose -f docker-compose.prod.yml pull backend
 
