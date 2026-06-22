@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_CONFIG } from "../config/api";
-import { getAuthUid } from "../utils/authStorage";
 import OmrProfileRoiEditor from "../features/omr/components/OmrProfileRoiEditor";
 import "../features/omr/styles/OmrMobileApp.css";
 import "./AdminPage.css";
@@ -18,7 +17,7 @@ const DEFAULT_CREATE_FIELDS = {
 
 export default function AdminPage() {
   const navigate = useNavigate();
-  const uid = getAuthUid();
+
 
   const [formProfiles, setFormProfiles] = useState<FormProfile[]>([]);
   const [formProfilesLoading, setFormProfilesLoading] = useState(false);
