@@ -63,11 +63,11 @@ resource "aws_security_group" "ec2" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "SSH"
+    description = "SSH (GitHub Actions + manual access)"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.my_ip_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # Port 8000 phải mở ra internet vì Vercel edge proxy đến EC2 từ nhiều IP khác nhau
