@@ -31,9 +31,18 @@ jobs:
         run: terraform init
         working-directory: terraform
 
-      - name: Terraform Plan / Apply
+      - name: Terraform Plan
+        if: inputs.action == 'plan'
         run: |
-          terraform ${{ inputs.action }} -auto-approve \
+          terraform plan \
+            -var="db_password=${{ secrets.DB_PASSWORD }}" \
+            -var="ec2_key_pair_name=ocr-crnn-keypair"
+        working-directory: terraform
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: |
+          terraform apply -auto-approve \
             -var="db_password=${{ secrets.DB_PASSWORD }}" \
             -var="ec2_key_pair_name=ocr-crnn-keypair"
         working-directory: terraform
