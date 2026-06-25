@@ -848,7 +848,7 @@ export default function MultichoicePage() {
     const nextSets = selectedTest.answerSets.map((set) => {
       if (set.code !== selectedAnswerSet.code) return set;
       const answers = [...set.answers];
-      answers[questionIdx] = value;
+      answers[questionIdx] = answers[questionIdx] === value ? "" : value;
       return { ...set, answers };
     });
     updateSelectedTest({ answerSets: nextSets });

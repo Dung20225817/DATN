@@ -858,7 +858,7 @@ def build_mcq_roi_from_black_markers(
     if long_form_mode:
         line_h_from_span = anchor_span_y / float(max(10, rows_per_block_hint))
     else:
-        line_h_from_span = anchor_span_y / 16.0
+        line_h_from_span = anchor_span_y / max(1.0, float(rows_per_block_hint - 1))
     line_h_geom = _safe_float(mcq_geometry.get("line_h"), -1.0)
     if line_h_geom > 0.0 and line_h_from_span > 0.0 and (0.45 * line_h_from_span) <= line_h_geom <= (1.80 * line_h_from_span):
         line_h = float(line_h_geom)
@@ -869,7 +869,7 @@ def build_mcq_roi_from_black_markers(
     line_h = max(6.0, min(44.0, float(line_h)))
 
     y_top = float(y_top_anchor + max(0, int(top_padding_px)))
-    y_bottom = float(y_bottom_anchor + max(float(bottom_padding_px), 0.45 * float(line_h) + 15.0))
+    y_bottom = float(y_bottom_anchor + max(float(bottom_padding_px), 1.0 * float(line_h) + 15.0))
 
     x1 = float(x_left_anchor - max(0, int(side_padding_px)))
     x2 = float(x_right_anchor + max(0, int(side_padding_px)))
@@ -1287,6 +1287,7 @@ def _decode_mcq_with_map(
     thin_noise_erode_iter = int(decode_cfg.get("thin_noise_erode_iter", 1))
     thin_noise_kernel = int(decode_cfg.get("thin_noise_kernel", 2))
     thin_noise_min_component_ratio = float(decode_cfg.get("thin_noise_min_component_ratio", 0.012))
+    density_only_scoring = bool(decode_cfg.get("density_only_scoring", False))
 
     row_offsets_px = list(decode_cfg["row_offsets_px"])
 
@@ -1357,7 +1358,7 @@ def _decode_mcq_with_map(
             # to keep option D aligned with actual bubbles.
             if int(block_count) == 2 and int(rows_per_block) >= 15:
                 band_left = raw_left + 0.10 * raw_span
-                band_right = raw_right - 0.18 * raw_span
+                band_right = raw_right - 0.20 * raw_span
             else:
                 band_left = raw_left + 0.08 * raw_span
                 band_right = raw_right - 0.04 * raw_span
@@ -1461,7 +1462,7 @@ def _decode_mcq_with_map(
                 center_density = _cell_density(center_bin)
                 darkness = _cell_score(cell_gray, cell_bin)
                 dark_p20 = _cell_dark_percentile(cell_gray, percentile=20.0)
-                score = float(0.90 * density + 0.10 * darkness)
+                score = float(density if density_only_scoring else 0.90 * density + 0.10 * darkness)
 
                 density_scores.append(float(density))
                 center_density_scores.append(float(center_density))
@@ -1595,7 +1596,17 @@ def _decode_mcq_with_map(
         noise_dark_gate = max(float(noise_dark_floor), float(row_dark_mean + noise_dark_margin))
         noise_center_gate = min(0.92, float(noise_center_gate))
         noise_dark_gate = min(0.85, float(noise_dark_gate))
-        noise_gate_ok = bool((best_center >= noise_center_gate) and (best_dark >= noise_dark_gate))
+        very_high_center = best_center >= 0.85
+        # Bypass dark gate when the bubble has strong fill + solid center — cases where
+        # row_dark_mean is high (well-inked rows) pushes noise_dark_gate above the mark's
+        # dark_p20 even though the bubble is clearly filled. Center >= 0.72 + score >= 0.55
+        # is a reliable signal that the mark is genuine.
+        strong_signal_bypass = (best_score >= 0.55) and (best_center >= 0.72)
+        noise_gate_ok = bool(
+            very_high_center
+            or strong_signal_bypass
+            or ((best_center >= noise_center_gate) and (best_dark >= noise_dark_gate))
+        )
         soft_rescue_ok = (
             bool(enable_soft_single_mark_rescue)
             and (best_idx >= 0)

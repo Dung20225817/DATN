@@ -1012,6 +1012,7 @@ def process_omr_exam(
     profile_exam_code_roi=None,
     profile_sid_row_offsets=None,
     profile_disable_mcq_rescue=False,
+    density_only_scoring=False,
     profile_mcq_decode=None,
     profile_threshold_mode=None,
     profile_corner_markers=None,
@@ -1378,6 +1379,9 @@ def process_omr_exam(
         )
 
         mcq_cfg = _parse_mcq_decode_config(profile_mcq_decode)
+        if density_only_scoring:
+            mcq_cfg = dict(mcq_cfg)
+            mcq_cfg["density_only_scoring"] = True
         mcq_rescue_disabled = bool(profile_disable_mcq_rescue)
         if long_form_mode:
             profile_mcq_decode_raw = profile_mcq_decode if isinstance(profile_mcq_decode, dict) else {}
@@ -1637,7 +1641,7 @@ def process_omr_exam(
         # If marker-anchored ROI is still highly uncertain, search nearby map parameters.
         # This keeps ownership in MCQ module while avoiding hardcoded service-side ROI rewrites.
         initial_uncertain = int(len(list(mcq_result.get("uncertain_questions") or [])))
-        search_uncertain_gate = max(4, int(round(0.60 * float(max(1, questions)))))
+        search_uncertain_gate = max(4, int(round(0.40 * float(max(1, questions)))))
         if (not mcq_rescue_disabled) and (not short_form_bands_locked) and initial_uncertain >= search_uncertain_gate:
             mcq_map_search_meta = {
                 "used": False,

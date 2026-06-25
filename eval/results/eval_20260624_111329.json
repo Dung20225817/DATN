@@ -1,0 +1,616 @@
+{
+  "created_at": "2026-06-24T11:13:29.743341",
+  "config": {
+    "api_url": "http://localhost:8000",
+    "dataset_dir": "D:\\GR2\\OCR_CRNN\\ocr_dataset",
+    "category_filter": "Vague_answer"
+  },
+  "summary": {
+    "total_images": 4,
+    "valid_images": 4,
+    "error_images": 0,
+    "score_accuracy": 1.0,
+    "score_accuracy_pct": "100.0%",
+    "graded_detection_rate": 0.9625,
+    "graded_detection_rate_pct": "96.2%",
+    "mean_meaningful_uncertain": 0.75,
+    "regression_rate": 1.0,
+    "regression_rate_pct": "100.0%",
+    "perfect_images": 1.0,
+    "perfect_images_pct": "100.0%",
+    "improved_count": 0,
+    "regressed_count": 0,
+    "top_uncertain_questions": [
+      {
+        "question": 7,
+        "count": 1,
+        "pct": "25%"
+      },
+      {
+        "question": 9,
+        "count": 1,
+        "pct": "25%"
+      },
+      {
+        "question": 16,
+        "count": 1,
+        "pct": "25%"
+      }
+    ]
+  },
+  "by_category": {
+    "Vague_answer": {
+      "total_images": 4,
+      "valid_images": 4,
+      "error_images": 0,
+      "score_accuracy": 1.0,
+      "score_accuracy_pct": "100.0%",
+      "graded_detection_rate": 0.9625,
+      "graded_detection_rate_pct": "96.2%",
+      "mean_meaningful_uncertain": 0.75,
+      "regression_rate": 1.0,
+      "regression_rate_pct": "100.0%",
+      "perfect_images": 1.0,
+      "perfect_images_pct": "100.0%",
+      "improved_count": 0,
+      "regressed_count": 0,
+      "top_uncertain_questions": [
+        {
+          "question": 7,
+          "count": 1,
+          "pct": "25%"
+        },
+        {
+          "question": 9,
+          "count": 1,
+          "pct": "25%"
+        },
+        {
+          "question": 16,
+          "count": 1,
+          "pct": "25%"
+        }
+      ]
+    }
+  },
+  "images": [
+    {
+      "image": "camera_1782272063758.jpg",
+      "category": "Vague_answer",
+      "form_profile": "40-cau-pdf",
+      "exam_code_golden": "111",
+      "questions": 40,
+      "graded_questions": 20,
+      "has_db_record": true,
+      "api_exam_code": "111",
+      "api_score": 20.0,
+      "api_uncertain_count": 0,
+      "api_uncertain_questions": [],
+      "total_questions": 20,
+      "graded_detected_count": 20,
+      "meaningful_uncertain_count": 0,
+      "meaningful_uncertain": [],
+      "detected_count": 20,
+      "uncertain_count": 0,
+      "correct_count": 20,
+      "wrong_count": 0,
+      "expected_score": 20.0,
+      "score_match": true,
+      "score_diff": 0.0,
+      "score_direction": "matched",
+      "regression_agree": 20,
+      "regression_total": 20,
+      "regression_rate": 1.0,
+      "perfect_regression": true,
+      "question_results": [
+        {
+          "question": 1,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 2,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 3,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 4,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 5,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 6,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 7,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 8,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 9,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 10,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 11,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 12,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 13,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 14,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 15,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 16,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 17,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 18,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 19,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 20,
+          "selected_label": "D",
+          "status": "correct"
+        }
+      ],
+      "api_error": null
+    },
+    {
+      "image": "camera_1782272160722.jpg",
+      "category": "Vague_answer",
+      "form_profile": "20-cau-pdf",
+      "exam_code_golden": "111",
+      "questions": 20,
+      "graded_questions": 20,
+      "has_db_record": true,
+      "api_exam_code": "111",
+      "api_score": 18.0,
+      "api_uncertain_count": 2,
+      "api_uncertain_questions": [
+        7,
+        9
+      ],
+      "total_questions": 20,
+      "graded_detected_count": 18,
+      "meaningful_uncertain_count": 2,
+      "meaningful_uncertain": [
+        7,
+        9
+      ],
+      "detected_count": 18,
+      "uncertain_count": 2,
+      "correct_count": 18,
+      "wrong_count": 0,
+      "expected_score": 18.0,
+      "score_match": true,
+      "score_diff": 0.0,
+      "score_direction": "matched",
+      "regression_agree": 20,
+      "regression_total": 20,
+      "regression_rate": 1.0,
+      "perfect_regression": true,
+      "question_results": [
+        {
+          "question": 1,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 2,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 3,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 4,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 5,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 6,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 7,
+          "selected_label": "-",
+          "status": "uncertain"
+        },
+        {
+          "question": 8,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 9,
+          "selected_label": "-",
+          "status": "uncertain"
+        },
+        {
+          "question": 10,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 11,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 12,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 13,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 14,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 15,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 16,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 17,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 18,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 19,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 20,
+          "selected_label": "A",
+          "status": "correct"
+        }
+      ],
+      "api_error": null
+    },
+    {
+      "image": "camera_1782272318010.jpg",
+      "category": "Vague_answer",
+      "form_profile": "40-cau-pdf",
+      "exam_code_golden": "202",
+      "questions": 40,
+      "graded_questions": 20,
+      "has_db_record": true,
+      "api_exam_code": "202",
+      "api_score": 20.0,
+      "api_uncertain_count": 0,
+      "api_uncertain_questions": [],
+      "total_questions": 20,
+      "graded_detected_count": 20,
+      "meaningful_uncertain_count": 0,
+      "meaningful_uncertain": [],
+      "detected_count": 20,
+      "uncertain_count": 0,
+      "correct_count": 20,
+      "wrong_count": 0,
+      "expected_score": 20.0,
+      "score_match": true,
+      "score_diff": 0.0,
+      "score_direction": "matched",
+      "regression_agree": 20,
+      "regression_total": 20,
+      "regression_rate": 1.0,
+      "perfect_regression": true,
+      "question_results": [
+        {
+          "question": 1,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 2,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 3,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 4,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 5,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 6,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 7,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 8,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 9,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 10,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 11,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 12,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 13,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 14,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 15,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 16,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 17,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 18,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 19,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 20,
+          "selected_label": "A",
+          "status": "correct"
+        }
+      ],
+      "api_error": null
+    },
+    {
+      "image": "camera_1782272441496.jpg",
+      "category": "Vague_answer",
+      "form_profile": "120pdf",
+      "exam_code_golden": "111",
+      "questions": 120,
+      "graded_questions": 20,
+      "has_db_record": true,
+      "api_exam_code": "111",
+      "api_score": 19.0,
+      "api_uncertain_count": 1,
+      "api_uncertain_questions": [
+        16
+      ],
+      "total_questions": 20,
+      "graded_detected_count": 19,
+      "meaningful_uncertain_count": 1,
+      "meaningful_uncertain": [
+        16
+      ],
+      "detected_count": 19,
+      "uncertain_count": 1,
+      "correct_count": 19,
+      "wrong_count": 0,
+      "expected_score": 19.0,
+      "score_match": true,
+      "score_diff": 0.0,
+      "score_direction": "matched",
+      "regression_agree": 28,
+      "regression_total": 28,
+      "regression_rate": 1.0,
+      "perfect_regression": true,
+      "question_results": [
+        {
+          "question": 1,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 2,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 3,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 4,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 5,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 6,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 7,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 8,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 9,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 10,
+          "selected_label": "C",
+          "status": "correct"
+        },
+        {
+          "question": 11,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 12,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 13,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 14,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 15,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 16,
+          "selected_label": "-",
+          "status": "uncertain"
+        },
+        {
+          "question": 17,
+          "selected_label": "B",
+          "status": "correct"
+        },
+        {
+          "question": 18,
+          "selected_label": "D",
+          "status": "correct"
+        },
+        {
+          "question": 19,
+          "selected_label": "A",
+          "status": "correct"
+        },
+        {
+          "question": 20,
+          "selected_label": "C",
+          "status": "correct"
+        }
+      ],
+      "api_error": null
+    }
+  ]
+}

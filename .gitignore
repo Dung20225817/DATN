@@ -84,9 +84,7 @@ fe/.next/
 fe/out/
 
 # Runtime storage
-storage/uploads/
-storage/logs/
-uploads/
+
 be/uploads/
 logs/
 be/logs/
@@ -102,10 +100,11 @@ be/logs/
 Thumbs.db
 .DS_Store
 DATN.md
-chapters/
 main.tex
+chapters/
+ocr_dataset/
+storage/
 usecaseuml.md
-
 # Terraform
 terraform/.terraform/
 terraform/*.tfstate
