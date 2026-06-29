@@ -101,13 +101,22 @@ Thumbs.db
 .DS_Store
 DATN.md
 main.tex
-chapters/
-ocr_dataset/
-storage/
-usecaseuml.md
+
 # Terraform
 terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/terraform.tfvars
 # terraform/.terraform.lock.hcl KHÔNG gitignore — cần commit để pin provider version
+
+# Tài liệu nội bộ không gửi
+Buoc*.md
+math.md
+phan_bien.md
+usecaseuml.md
+xu_ly_anh.md
+chapters/
+
+# Dữ liệu runtime không commit
+ocr_dataset/
+storage/

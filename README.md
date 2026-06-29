@@ -123,15 +123,15 @@ npm install
 npm run dev
 ```
 
-Frontend chạy mặc định tại `https://localhost:5173`.
+Frontend chạy mặc định tại `http://localhost:5173`.
 
 ## Chạy bằng Docker
 
-Docker Compose chay 3 service:
+Docker Compose chạy 3 service:
 
-- `db`: PostgreSQL 16, luu du lieu trong volume `pgdata`.
-- `backend`: FastAPI, tu tao bang khi khoi dong neu database trong.
-- `frontend`: Caddy phuc vu React build va reverse proxy `/api/*`, `/static/*` ve backend.
+- `db`: PostgreSQL 16, lưu dữ liệu trong volume `pgdata`.
+- `backend`: FastAPI, tự tạo bảng khi khởi động nếu database trống.
+- `frontend`: Caddy phục vụ React build và reverse proxy `/api/*`, `/static/*` về backend.
 
 ```powershell
 Copy-Item .env.docker.example .env.docker
@@ -176,6 +176,6 @@ npm run build
 
 ## Ghi chú kiến trúc
 
-- `api/omr/shared.py` và `features/omr/pages/MultichoicePage.tsx` vẫn là hai điểm còn lớn nhất trong codebase; bước tách tiếp theo nên tập trung vào shared helper phía backend và camera/grading hooks phía frontend. Phần thống kê và xuất file đã được tách thành component riêng.
-- File runtime sinh ra nằm trong `storage/uploads/` và không được commit.
+- Logic xử lý OMR tập trung tại `be/app/api/omr/shared.py` (backend) và `fe/src/features/omr/pages/MultichoicePage.tsx` (frontend). Thống kê và xuất file đã được tách thành component riêng (`StatsPanel`, `ExportPanel`).
+- File runtime (ảnh upload, log) nằm trong `storage/` và không được commit vào repository.
 - Tài liệu kiến trúc chi tiết hơn nằm trong `docs/ARCHITECTURE.md`.
