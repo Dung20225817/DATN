@@ -110,12 +110,7 @@ terraform/terraform.tfvars
 # terraform/.terraform.lock.hcl KHÔNG gitignore — cần commit để pin provider version
 
 # Tài liệu nội bộ không gửi
-Buoc*.md
-math.md
-phan_bien.md
-usecaseuml.md
-xu_ly_anh.md
-chapters/
+
 
 # Dữ liệu runtime không commit
 ocr_dataset/

@@ -26,7 +26,7 @@ from app.services.omr.answer_keys import (
     normalize_choice_token,
     parse_answer_key_from_text,
 )
-from app.services.omr.omr_service import process_omr_exam, generate_omr_template, suggest_omr_crop_quad
+from app.services.omr.omr_service import process_omr_exam, generate_omr_template
 from app.db.models.omr import OMRTest, OMRAssignment, OMRGradeResult
 from app.db.session import get_db
 
@@ -416,25 +416,6 @@ def _sanitize_threshold_mode(raw: Any) -> Optional[str]:
         return mode
     return None
 
-def _sanitize_quad(raw: Any) -> Optional[dict]:
-    if not isinstance(raw, dict):
-        return None
-    out = {}
-    for key in ["tl", "tr", "br", "bl"]:
-        point = raw.get(key)
-        if not isinstance(point, dict):
-            return None
-        try:
-            px = float(point.get("x", 0.0))
-            py = float(point.get("y", 0.0))
-        except Exception:
-            return None
-        out[key] = {
-            "x": round(max(0.0, min(1.0, px)), 6),
-            "y": round(max(0.0, min(1.0, py)), 6),
-        }
-    return out
-
 def _sanitize_corner_markers(raw: Any) -> Optional[dict]:
     if not isinstance(raw, dict):
         return None
@@ -536,7 +517,6 @@ def _default_profile(sample_file: str) -> dict:
         "student_id_digits": 6,
         "sid_has_write_row": True,
         "strategy": {
-            "crop_quad": None,
             "sid_roi": None,
             "mcq_roi": None,
             "exam_code_roi": None,
@@ -615,39 +595,9 @@ def _build_runtime_config(
     num_blocks: Optional[int],
     student_id_digits: int,
     sid_has_write_row: bool,
-    crop_x: Optional[float] = None,
-    crop_y: Optional[float] = None,
-    crop_w: Optional[float] = None,
-    crop_h: Optional[float] = None,
-    crop_tl_x: Optional[float] = None,
-    crop_tl_y: Optional[float] = None,
-    crop_tr_x: Optional[float] = None,
-    crop_tr_y: Optional[float] = None,
-    crop_br_x: Optional[float] = None,
-    crop_br_y: Optional[float] = None,
-    crop_bl_x: Optional[float] = None,
-    crop_bl_y: Optional[float] = None,
 ) -> dict:
     p = profile or {}
     strategy = p.get("strategy") if isinstance(p.get("strategy"), dict) else {}
-
-    manual_quad_requested = all(
-        v is not None
-        for v in [crop_tl_x, crop_tl_y, crop_tr_x, crop_tr_y, crop_br_x, crop_br_y, crop_bl_x, crop_bl_y]
-    )
-    if (not manual_quad_requested) and isinstance(strategy.get("crop_quad"), dict):
-        quad = strategy.get("crop_quad")
-        try:
-            crop_tl_x = float(quad.get("tl", {}).get("x"))
-            crop_tl_y = float(quad.get("tl", {}).get("y"))
-            crop_tr_x = float(quad.get("tr", {}).get("x"))
-            crop_tr_y = float(quad.get("tr", {}).get("y"))
-            crop_br_x = float(quad.get("br", {}).get("x"))
-            crop_br_y = float(quad.get("br", {}).get("y"))
-            crop_bl_x = float(quad.get("bl", {}).get("x"))
-            crop_bl_y = float(quad.get("bl", {}).get("y"))
-        except Exception:
-            crop_tl_x = crop_tl_y = crop_tr_x = crop_tr_y = crop_br_x = crop_br_y = crop_bl_x = crop_bl_y = None
 
     parsed_disable_rescue = _sanitize_bool_flag(strategy.get("disable_mcq_rescue"))
 
@@ -658,18 +608,6 @@ def _build_runtime_config(
         "num_blocks": int(p.get("num_blocks")) if p.get("num_blocks") not in (None, "", "null") else num_blocks,
         "student_id_digits": max(1, int(p.get("student_id_digits") or student_id_digits)),
         "sid_has_write_row": bool(p.get("sid_has_write_row") if "sid_has_write_row" in p else sid_has_write_row),
-        "crop_x": crop_x,
-        "crop_y": crop_y,
-        "crop_w": crop_w,
-        "crop_h": crop_h,
-        "crop_tl_x": crop_tl_x,
-        "crop_tl_y": crop_tl_y,
-        "crop_tr_x": crop_tr_x,
-        "crop_tr_y": crop_tr_y,
-        "crop_br_x": crop_br_x,
-        "crop_br_y": crop_br_y,
-        "crop_bl_x": crop_bl_x,
-        "crop_bl_y": crop_bl_y,
         "profile_sid_roi": _sanitize_norm_rect(strategy.get("sid_roi")),
         "profile_mcq_roi": _sanitize_norm_rect(strategy.get("mcq_roi")),
         "profile_exam_code_roi": _sanitize_norm_rect(strategy.get("exam_code_roi")),
@@ -751,18 +689,6 @@ async def _resolve_answer_key_auto_from_sheet(
     num_blocks: Optional[int],
     student_id_digits: int,
     sid_has_write_row: bool,
-    crop_x: Optional[float] = None,
-    crop_y: Optional[float] = None,
-    crop_w: Optional[float] = None,
-    crop_h: Optional[float] = None,
-    crop_tl_x: Optional[float] = None,
-    crop_tl_y: Optional[float] = None,
-    crop_tr_x: Optional[float] = None,
-    crop_tr_y: Optional[float] = None,
-    crop_br_x: Optional[float] = None,
-    crop_br_y: Optional[float] = None,
-    crop_bl_x: Optional[float] = None,
-    crop_bl_y: Optional[float] = None,
 ):
     detect_probe = await run_in_threadpool(
         process_omr_exam,
@@ -775,18 +701,6 @@ async def _resolve_answer_key_auto_from_sheet(
         num_blocks=num_blocks,
         student_id_digits=student_id_digits,
         sid_has_write_row=sid_has_write_row,
-        crop_x=crop_x,
-        crop_y=crop_y,
-        crop_w=crop_w,
-        crop_h=crop_h,
-        crop_tl_x=crop_tl_x,
-        crop_tl_y=crop_tl_y,
-        crop_tr_x=crop_tr_x,
-        crop_tr_y=crop_tr_y,
-        crop_br_x=crop_br_x,
-        crop_br_y=crop_br_y,
-        crop_bl_x=crop_bl_x,
-        crop_bl_y=crop_bl_y,
     )
     if "error" in detect_probe:
         raise HTTPException(status_code=400, detail=detect_probe.get("error", "Không thể nhận diện đề từ ảnh"))

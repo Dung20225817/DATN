@@ -19,18 +19,6 @@ async def grade_exam(
     num_blocks: Optional[int] = Form(default=None),
     student_id_digits: int = Form(6),
     sid_has_write_row: bool = Form(False),
-    crop_x: Optional[float] = Form(default=None),
-    crop_y: Optional[float] = Form(default=None),
-    crop_w: Optional[float] = Form(default=None),
-    crop_h: Optional[float] = Form(default=None),
-    crop_tl_x: Optional[float] = Form(default=None),
-    crop_tl_y: Optional[float] = Form(default=None),
-    crop_tr_x: Optional[float] = Form(default=None),
-    crop_tr_y: Optional[float] = Form(default=None),
-    crop_br_x: Optional[float] = Form(default=None),
-    crop_br_y: Optional[float] = Form(default=None),
-    crop_bl_x: Optional[float] = Form(default=None),
-    crop_bl_y: Optional[float] = Form(default=None),
     disable_mcq_rescue: Optional[bool] = Form(default=None, description="Tắt MCQ Map Search Rescue (dùng cho ablation eval)"),
     density_only_scoring: Optional[bool] = Form(default=None, description="Chỉ dùng density (bỏ darkness) khi tính điểm bong bóng (ablation)"),
     db: Session = Depends(get_db),
@@ -48,18 +36,6 @@ async def grade_exam(
             num_blocks=num_blocks,
             student_id_digits=student_id_digits,
             sid_has_write_row=sid_has_write_row,
-            crop_x=crop_x,
-            crop_y=crop_y,
-            crop_w=crop_w,
-            crop_h=crop_h,
-            crop_tl_x=crop_tl_x,
-            crop_tl_y=crop_tl_y,
-            crop_tr_x=crop_tr_x,
-            crop_tr_y=crop_tr_y,
-            crop_br_x=crop_br_x,
-            crop_br_y=crop_br_y,
-            crop_bl_x=crop_bl_x,
-            crop_bl_y=crop_bl_y,
         )
         if disable_mcq_rescue is not None:
             runtime["profile_disable_mcq_rescue"] = disable_mcq_rescue
@@ -71,18 +47,6 @@ async def grade_exam(
         num_blocks = runtime["num_blocks"]
         student_id_digits = runtime["student_id_digits"]
         sid_has_write_row = runtime["sid_has_write_row"]
-        crop_x = runtime["crop_x"]
-        crop_y = runtime["crop_y"]
-        crop_w = runtime["crop_w"]
-        crop_h = runtime["crop_h"]
-        crop_tl_x = runtime["crop_tl_x"]
-        crop_tl_y = runtime["crop_tl_y"]
-        crop_tr_x = runtime["crop_tr_x"]
-        crop_tr_y = runtime["crop_tr_y"]
-        crop_br_x = runtime["crop_br_x"]
-        crop_br_y = runtime["crop_br_y"]
-        crop_bl_x = runtime["crop_bl_x"]
-        crop_bl_y = runtime["crop_bl_y"]
 
         uid_checked = None
         if uid is not None:
@@ -159,18 +123,6 @@ async def grade_exam(
                 num_blocks=num_blocks,
                 student_id_digits=student_id_digits,
                 sid_has_write_row=sid_has_write_row,
-                crop_x=crop_x,
-                crop_y=crop_y,
-                crop_w=crop_w,
-                crop_h=crop_h,
-                crop_tl_x=crop_tl_x,
-                crop_tl_y=crop_tl_y,
-                crop_tr_x=crop_tr_x,
-                crop_tr_y=crop_tr_y,
-                crop_br_x=crop_br_x,
-                crop_br_y=crop_br_y,
-                crop_bl_x=crop_bl_x,
-                crop_bl_y=crop_bl_y,
             )
 
         # 3. Gọi Service xử lý
@@ -186,18 +138,6 @@ async def grade_exam(
             num_blocks=num_blocks,
             student_id_digits=student_id_digits,
             sid_has_write_row=sid_has_write_row,
-            crop_x=crop_x,
-            crop_y=crop_y,
-            crop_w=crop_w,
-            crop_h=crop_h,
-            crop_tl_x=crop_tl_x,
-            crop_tl_y=crop_tl_y,
-            crop_tr_x=crop_tr_x,
-            crop_tr_y=crop_tr_y,
-            crop_br_x=crop_br_x,
-            crop_br_y=crop_br_y,
-            crop_bl_x=crop_bl_x,
-            crop_bl_y=crop_bl_y,
             profile_sid_roi=runtime["profile_sid_roi"],
             profile_sid_roi_lock=runtime["profile_sid_roi_lock"],
             profile_mcq_roi=runtime["profile_mcq_roi"],
@@ -420,14 +360,6 @@ async def grade_exam_batch(
                 num_blocks=num_blocks,
                 student_id_digits=student_id_digits,
                 sid_has_write_row=sid_has_write_row,
-                crop_tl_x=runtime["crop_tl_x"],
-                crop_tl_y=runtime["crop_tl_y"],
-                crop_tr_x=runtime["crop_tr_x"],
-                crop_tr_y=runtime["crop_tr_y"],
-                crop_br_x=runtime["crop_br_x"],
-                crop_br_y=runtime["crop_br_y"],
-                crop_bl_x=runtime["crop_bl_x"],
-                crop_bl_y=runtime["crop_bl_y"],
                 profile_sid_roi=runtime["profile_sid_roi"],
                 profile_sid_roi_lock=runtime["profile_sid_roi_lock"],
                 profile_mcq_roi=runtime["profile_mcq_roi"],
@@ -522,27 +454,5 @@ async def grade_exam_batch(
     except Exception as e:
         import traceback
 
-        traceback.print_exc()
-        return JSONResponse(status_code=500, content={"message": "Lỗi server", "details": str(e)})
-
-@router.post("/suggest-crop")
-async def suggest_crop(file: UploadFile = File(...)):
-    """Suggest 4-corner crop quad from current OMR CV pipeline."""
-    try:
-        safe_name = os.path.basename(file.filename or "omr_input.jpg")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        temp_name = f"suggest_{timestamp}_{safe_name}"
-        file_location = os.path.join(BASE_OMR_DIR, temp_name)
-
-        with open(file_location, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        result = await run_in_threadpool(suggest_omr_crop_quad, file_location)
-        if "error" in result:
-            return JSONResponse(status_code=400, content=result)
-
-        return JSONResponse(content=result)
-    except Exception as e:
-        import traceback
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"message": "Lỗi server", "details": str(e)})

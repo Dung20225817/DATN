@@ -32,11 +32,7 @@ from .omr_mcq import (
 )
 from .omr_numeric import _decode_numeric_columns, _parse_sid_row_offsets
 from .omr_preprocess import (
-    _apply_optional_rect_crop,
     _binarize,
-    _detect_page_quad,
-    _norm_quad_from_points,
-    _parse_manual_quad,
     _warp_to_standard_layout,
 )
 from .omr_scoring import _build_answer_compare, _normalize_answer_key
@@ -946,43 +942,6 @@ def generate_omr_template(
     }
 
 
-def suggest_omr_crop_quad(image_path: str):
-    img = cv2.imread(image_path)
-    if img is None:
-        return {"error": "Khong the doc file anh"}
-
-    h, w = img.shape[:2]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    quad, strategy = _detect_page_quad(gray)
-    if quad is None:
-        quad = np.array(
-            [
-                [0.08 * w, 0.08 * h],
-                [0.92 * w, 0.08 * h],
-                [0.92 * w, 0.92 * h],
-                [0.08 * w, 0.92 * h],
-            ],
-            dtype=np.float32,
-        )
-        strategy = "default"
-
-    markers = omr_marker_utils._extract_black_square_markers_from_gray(
-        gray,
-        min_area_ratio=0.00002,
-        max_area_ratio=0.015,
-        max_markers=240,
-    )
-
-    return {
-        "success": True,
-        "strategy": str(strategy),
-        "quad": _norm_quad_from_points(quad, w, h),
-        "marker_count": int(len(markers)),
-        "image": {"width": int(w), "height": int(h)},
-    }
-
-
 def process_omr_exam(
     image_path: str,
     output_folder: str,
@@ -994,18 +953,6 @@ def process_omr_exam(
     num_blocks=None,
     student_id_digits=6,
     sid_has_write_row=False,
-    crop_x=None,
-    crop_y=None,
-    crop_w=None,
-    crop_h=None,
-    crop_tl_x=None,
-    crop_tl_y=None,
-    crop_tr_x=None,
-    crop_tr_y=None,
-    crop_br_x=None,
-    crop_br_y=None,
-    crop_bl_x=None,
-    crop_bl_y=None,
     profile_sid_roi=None,
     profile_sid_roi_lock=False,
     profile_mcq_roi=None,
@@ -1047,20 +994,7 @@ def process_omr_exam(
         warnings: List[str] = []
         warning_codes: List[str] = []
 
-        img_input, rect_crop_used = _apply_optional_rect_crop(img_raw, crop_x, crop_y, crop_w, crop_h)
-        if rect_crop_used:
-            warnings.append("Da ap dung crop rectangle truoc global warp.")
-
-        manual_quad = _parse_manual_quad(
-            crop_tl_x,
-            crop_tl_y,
-            crop_tr_x,
-            crop_tr_y,
-            crop_br_x,
-            crop_br_y,
-            crop_bl_x,
-            crop_bl_y,
-        )
+        img_input = img_raw
 
         img_std, warp_strategy, global_warp_used, warp_info = _warp_to_standard_layout(
             img_input,
@@ -1068,11 +1002,7 @@ def process_omr_exam(
             height_img=HEIGHT_IMG,
             a4_warp_w=A4_WARP_W,
             a4_warp_h=A4_WARP_H,
-            manual_quad_norm=manual_quad,
         )
-        if manual_quad is not None and warp_strategy != "manual-quad":
-            warnings.append("Crop 4 diem thu cong khong hop le, fallback sang detector tu dong.")
-            warning_codes.append("MANUAL_QUAD_INVALID")
 
         if not global_warp_used:
             warnings.append("Khong tim thay 4 goc marker ro rang, da fallback ve resize thong thuong.")

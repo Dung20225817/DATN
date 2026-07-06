@@ -1,0 +1,253 @@
+\chapter{CÔNG NGHỆ SỬ DỤNG}
+Chương này không chỉ giới thiệu định nghĩa công nghệ mà còn so sánh với các lựa chọn thay thế tương đương. Tiêu chí lựa chọn xuất phát từ hệ thống thực tế: backend Python xử lý ảnh, frontend web ưu tiên thiết bị di động, ảnh phiếu được xử lý bằng OpenCV/NumPy~\cite{numpy} và lưu kết quả vào PostgreSQL~\cite{postgresql}.
+
+\section{Xử lý ảnh số -- OpenCV}
+
+Pipeline OMR cần phát hiện/cắt trang giấy, biến đổi phối cảnh, nhị phân hóa, tìm marker đen, suy luận ROI và tính mật độ tô trong từng ô. Đây là các phép toán ảnh ma trận lớn, yêu cầu tốc độ xử lý đủ nhanh trên CPU.
+
+\begin{table}[H]
+\centering
+\caption{So sánh công nghệ xử lý ảnh số}
+\label{tab:so-sanh-xu-ly-anh}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{|p{3cm}|p{4.5cm}|p{7cm}|}
+\hline
+\textbf{Công nghệ} & \textbf{Vai trò tương đương} & \textbf{Đánh giá} \\
+\hline
+
+\textbf{OpenCV} &
+Xử lý ảnh tổng quát, contour, warp, threshold, morphology &
+Được chọn vì có đầy đủ hàm cần dùng, lõi C++ nhanh, giao diện Python ổn định và tương thích trực tiếp với NumPy \\
+\hline
+
+scikit-image &
+Xử lý ảnh khoa học &
+API rõ nhưng không thuận lợi bằng OpenCV cho contour, thành phần liên thông và xử lý thời gian thực \\
+\hline
+
+Pillow &
+Đọc/ghi và biến đổi ảnh cơ bản &
+Không đủ cho bài toán phát hiện hình học, marker và warp phối cảnh \\
+\hline
+
+MATLAB Image Processing Toolbox &
+Xử lý ảnh nghiên cứu &
+Mạnh nhưng có chi phí bản quyền và khó tích hợp vào web backend Python \\
+\hline
+
+\end{tabular}
+\end{table}
+
+Lý do khoa học lựa chọn OpenCV~\cite{opencv,learning-opencv} là các thuật toán như \texttt{cv2.warpPerspective}, \texttt{cv2.connectedComponentsWithStats}, \texttt{cv2.findContours}, \texttt{cv2.threshold} và \texttt{cv2.adaptiveThreshold} được triển khai bằng C++ và biên dịch thành mã máy; lớp Python chỉ là giao diện gọi vào thư viện C++ đó, nên tốc độ xử lý ảnh tương đương C++ thuần thay vì bị giới hạn bởi trình thông dịch Python. Phương pháp Otsu~\cite{otsu} phù hợp khi nền ảnh tương đối đều; adaptive threshold~\cite{gonzalez-dip} được dùng khi ảnh có bóng đổ hoặc ánh sáng không đồng nhất.
+
+\section{Backend API -- FastAPI}
+
+Backend cần nhận request JSON, tải lên ảnh multipart, phục vụ tệp tĩnh và chạy tác vụ xử lý ảnh CPU-bound trong threadpool.
+
+\begin{table}[H]
+\centering
+\caption{So sánh công nghệ Backend API}
+\label{tab:so-sanh-backend-api}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|L{2.7cm}|L{4.1cm}|L{7.2cm}|}
+\hline
+\textbf{Công nghệ} & \textbf{Vai trò tương đương} & \textbf{Đánh giá} \\
+\hline
+
+\textbf{FastAPI} &
+REST API Python trên ASGI &
+Được chọn vì hỗ trợ \texttt{UploadFile}, dependency injection, Pydantic validation, OpenAPI và \texttt{run\_in\_threadpool}. \\
+\hline
+
+Flask &
+REST API Python nhẹ &
+Dễ dùng nhưng cần nhiều extension cho validation, schema và tài liệu API. \\
+\hline
+
+Django REST Framework &
+Web API đầy đủ &
+Mạnh cho các hệ thống CRUD lớn nhưng nặng hơn nhu cầu của hệ thống xử lý ảnh. \\
+\hline
+
+Node.js/Express &
+REST API JavaScript &
+Không thuận lợi bằng Python vì pipeline ảnh của hệ thống dùng OpenCV và NumPy phía backend. \\
+\hline
+
+\end{tabular}
+\normalsize
+\end{table}
+
+FastAPI~\cite{fastapi} phù hợp cho hệ thống này vì hai lý do kỹ thuật chính: (i) hỗ trợ nhận tệp ảnh multipart trực tiếp qua kiểu \texttt{UploadFile} và tích hợp Pydantic để kiểm tra dữ liệu đầu vào ngay tại lớp API; (ii) mô hình ASGI cho phép chạy tác vụ xử lý ảnh OpenCV/NumPy nặng CPU trong nhóm luồng riêng qua \texttt{run\_in\_threadpool}, tránh chặn vòng lặp sự kiện và duy trì khả năng xử lý đồng thời nhiều yêu cầu chấm bài.
+\section{Cơ sở dữ liệu: PostgreSQL và SQLAlchemy}
+
+Hệ thống sử dụng hai công nghệ ở hai tầng riêng biệt: \textbf{PostgreSQL} là hệ quản trị cơ sở dữ liệu -- nơi dữ liệu thực sự được lưu trữ; \textbf{SQLAlchemy} là thư viện ORM (Object-Relational Mapper) Python -- tầng trung gian cho phép định nghĩa bảng dữ liệu bằng Python class thay vì viết SQL thủ công. Hai công nghệ này bổ trợ nhau chứ không thay thế nhau.
+
+\subsection{Hệ quản trị cơ sở dữ liệu -- PostgreSQL}
+
+Dữ liệu nghiệp vụ gồm tài khoản, bài thi, nhiều bộ đáp án theo mã đề và lịch sử chấm có cấu trúc lồng nhau. Vì vậy, cơ sở dữ liệu cần hỗ trợ cả dữ liệu quan hệ lẫn dữ liệu bán cấu trúc JSON trong cùng một hệ thống.
+
+\begin{table}[H]
+\centering
+\caption{So sánh công nghệ cơ sở dữ liệu}
+\label{tab:so-sanh-co-so-du-lieu}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|L{2.7cm}|L{4.1cm}|L{7.2cm}|}
+\hline
+\textbf{Công nghệ} & \textbf{Vai trò tương đương} & \textbf{Đánh giá} \\
+\hline
+
+\textbf{PostgreSQL} &
+Cơ sở dữ liệu quan hệ có hỗ trợ JSON &
+Được chọn vì hỗ trợ đồng thời dữ liệu quan hệ (người dùng, bài thi, kết quả chấm) và dữ liệu bán cấu trúc (bộ đáp án nhiều mã đề, kết quả chấm dạng JSON) trong cùng một hệ thống. \\
+\hline
+
+MySQL &
+Cơ sở dữ liệu quan hệ &
+Có hỗ trợ kiểu dữ liệu JSON, nhưng PostgreSQL thuận lợi hơn khi hệ thống cần lưu và truy vấn dữ liệu bán cấu trúc. \\
+\hline
+
+SQLite &
+Cơ sở dữ liệu nhúng &
+Thuận tiện cho kiểm thử cục bộ, nhưng không phù hợp khi hệ thống có nhiều người dùng và nhiều yêu cầu chấm bài đồng thời. \\
+\hline
+
+MongoDB &
+Cơ sở dữ liệu document &
+Phù hợp lưu JSON tự do, nhưng hệ thống có quan hệ rõ ràng giữa người dùng, bài thi và lịch sử chấm -- mô hình quan hệ phù hợp hơn. \\
+\hline
+
+\end{tabular}
+\normalsize
+\end{table}
+
+\subsection{Thư viện ORM -- SQLAlchemy}
+
+ORM (Object-Relational Mapper) là tầng thư viện nằm giữa code Python và cơ sở dữ liệu: thay vì viết câu lệnh SQL thủ công, lập trình viên định nghĩa bảng dữ liệu bằng Python class và thư viện tự sinh SQL tương ứng khi cần truy vấn hoặc cập nhật dữ liệu.
+
+\begin{table}[H]
+\centering
+\caption{So sánh phương án truy cập cơ sở dữ liệu từ Python}
+\label{tab:so-sanh-orm}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{|L{2.7cm}|L{4.1cm}|L{7.2cm}|}
+\hline
+\textbf{Phương án} & \textbf{Vai trò} & \textbf{Đánh giá} \\
+\hline
+
+\textbf{SQLAlchemy} &
+ORM và Core SQL cho Python &
+Được chọn vì tích hợp tốt với FastAPI (session dependency injection), hỗ trợ định nghĩa lược đồ bằng Python class và cho phép đổi hệ CSDL chỉ bằng cách thay chuỗi kết nối mà không sửa mã nghiệp vụ. \\
+\hline
+
+psycopg2 (SQL thuần) &
+Driver PostgreSQL cho Python &
+Linh hoạt tối đa nhưng phải viết và quản lý SQL thủ công, dễ phát sinh lỗi khi lược đồ thay đổi. \\
+\hline
+
+Tortoise-ORM &
+ORM bất đồng bộ cho Python &
+Thiết kế cho async-native, nhưng FastAPI xử lý tác vụ nặng CPU qua threadpool nên ưu thế bất đồng bộ của Tortoise không cần thiết. \\
+\hline
+
+Peewee &
+ORM nhẹ cho Python &
+Đơn giản, phù hợp dự án nhỏ nhưng ít tính năng hơn SQLAlchemy khi cần dependency injection và quản lý phiên trong FastAPI. \\
+\hline
+
+\end{tabular}
+\normalsize
+\end{table}
+
+SQLAlchemy~\cite{sqlalchemy} được chọn vì cho phép định nghĩa toàn bộ lược đồ bằng Python class, tích hợp phụ thuộc phiên vào FastAPI và dễ dàng chuyển đổi giữa PostgreSQL (môi trường triển khai) và SQLite (kiểm thử cục bộ) chỉ bằng cách thay chuỗi kết nối -- mà không cần sửa mã nghiệp vụ.
+\section{Frontend - React, TypeScript}
+
+Frontend là SPA ưu tiên thiết bị di động gồm nhiều trạng thái nghiệp vụ: danh sách bài thi, chấm bài, đáp án, thống kê, xuất tệp, máy quét camera và route chi tiết bản ghi.
+
+\begin{table}[H]
+\centering
+\caption{So sánh công nghệ frontend}
+\label{tab:so-sanh-frontend}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{3cm}|p{4.5cm}|>{\raggedright\arraybackslash}p{7cm}|}
+\hline
+\textbf{Công nghệ} & \textbf{Vai trò tương đương} & \textbf{Đánh giá} \\
+\hline
+
+\textbf{React + TypeScript}~\cite{react} &
+SPA component-based &
+Được chọn vì phù hợp UI nhiều trạng thái, có type cho \texttt{FormProfile}, \texttt{OMRResult}, \texttt{GradeRecord} \\
+\hline
+
+Vue + TypeScript &
+SPA component-based &
+Tương đương năng lực nhưng repo hiện đã dùng React, đổi framework không đem lại lợi ích đủ lớn \\
+\hline
+
+Angular &
+SPA framework đầy đủ &
+Mạnh nhưng mã khởi tạo lớn hơn nhu cầu \\
+\hline
+
+Next.js &
+React SSR/full-stack &
+Không cần SSR vì ứng dụng là công cụ nội bộ chạy local/LAN \\
+\hline
+
+\end{tabular}
+\end{table}
+
+Vite~\cite{vite} được chọn vì phát triển nhanh, hỗ trợ HTTPS local qua \path{@vitejs/plugin-basic-ssl}, proxy \texttt{/api} và \texttt{/static} về backend. HTTPS local quan trọng vì camera trình duyệt yêu cầu ngữ cảnh bảo mật.
+
+\section{WebRTC MediaDevices API}
+
+Smart Camera Scanner cần lấy khung hình camera trực tiếp trong trình duyệt và phân tích marker theo thời gian thực.
+
+\begin{table}[H]
+\centering
+\caption{So sánh công nghệ truy cập camera trên trình duyệt}
+\label{tab:so-sanh-camera-browser}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{|
+>{\raggedright\arraybackslash}p{3cm}|
+>{\raggedright\arraybackslash}p{4.5cm}|
+>{\raggedright\arraybackslash}p{7cm}|
+}
+\hline
+\textbf{Công nghệ} & \textbf{Vai trò tương đương} & \textbf{Đánh giá} \\
+\hline
+
+\textbf{WebRTC MediaDevices API} &
+Truy cập camera từ trình duyệt &
+Được chọn vì có thể truy cập camera trực tiếp trên trình duyệt mà không cần cài thêm ứng dụng nào; WebRTC hoạt động trên HTTPS/localhost và trả luồng video trực tiếp cho canvas để phân tích khung hình theo thời gian thực \\
+\hline
+
+\parbox[t]{3cm}{
+\raggedright
+\footnotesize
+\ttfamily
+\textless input\\
+type="file"\\
+capture\textgreater
+} &
+Chụp ảnh qua trình chọn file mobile &
+Dễ triển khai nhưng không phân tích khung hình thời gian thực và không tự khóa khi đủ marker \\
+\hline
+
+React Native Camera &
+Camera native app &
+Trải nghiệm tốt hơn nhưng vượt phạm vi web app \\
+\hline
+
+Native Android/iOS &
+Camera native &
+Hiệu năng cao nhất nhưng tăng chi phí phát triển \\
+\hline
+
+\end{tabular}
+\end{table}
+
+Lựa chọn WebRTC~\cite{webrtc} có cơ sở kỹ thuật vì máy quét chỉ cần đọc pixel từ khung hình video qua canvas mỗi khoảng 130ms, tính độ sáng trung tâm và tỷ lệ pixel tối tại bốn marker. Thuật toán này đủ nhẹ để chạy phía máy khách và giảm số ảnh gửi lỗi lên backend.

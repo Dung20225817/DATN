@@ -33,7 +33,6 @@ export const API_CONFIG = {
     GET_FORM_PROFILE: (code: string) => `${API_BASE_URL}/api/omr/form-profiles/${code}`,
     SAVE_FORM_PROFILE: `${API_BASE_URL}/api/omr/form-profiles`,
     UPLOAD_FORM_SAMPLE: `${API_BASE_URL}/api/omr/upload-form-sample`,
-    SUGGEST_CROP: `${API_BASE_URL}/api/omr/suggest-crop`,
     CREATE_ASSIGNMENT: `${API_BASE_URL}/api/omr/assignments`,
     LIST_ASSIGNMENTS: (uid: number) => `${API_BASE_URL}/api/omr/assignments/${uid}`,
     UPDATE_ASSIGNMENT: (uid: number, aid: number) => `${API_BASE_URL}/api/omr/assignments/${uid}/${aid}`,

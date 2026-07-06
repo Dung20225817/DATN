@@ -50,47 +50,6 @@ def _order_quad_points(pts):
     return ordered
 
 
-def _warp_by_manual_quad(img_bgr, norm_points, target_size=None):
-    """Perspective-warp by 4 normalized points (TL,TR,BR,BL-ish), returns None if invalid."""
-    if norm_points is None or len(norm_points) != 4:
-        return None
-
-    h, w = img_bgr.shape[:2]
-    pts = []
-    for px, py in norm_points:
-        x = max(0.0, min(1.0, float(px))) * max(1, w - 1)
-        y = max(0.0, min(1.0, float(py))) * max(1, h - 1)
-        pts.append([x, y])
-
-    src = _order_quad_points(np.array(pts, dtype=np.float32))
-
-    width_top = np.linalg.norm(src[1] - src[0])
-    width_bottom = np.linalg.norm(src[2] - src[3])
-    target_w = int(max(width_top, width_bottom))
-
-    height_left = np.linalg.norm(src[3] - src[0])
-    height_right = np.linalg.norm(src[2] - src[1])
-    target_h = int(max(height_left, height_right))
-
-    if target_w < 100 or target_h < 100:
-        return None
-
-    if target_size is not None:
-        tw = max(100, int(target_size[0]))
-        th = max(100, int(target_size[1]))
-    else:
-        tw = target_w
-        th = target_h
-
-    dst = np.array(
-        [[0, 0], [tw - 1, 0], [tw - 1, th - 1], [0, th - 1]],
-        dtype=np.float32,
-    )
-    matrix = cv2.getPerspectiveTransform(src, dst)
-    warped = cv2.warpPerspective(img_bgr, matrix, (tw, th))
-    return warped
-
-
 def _split_grid(binary_img, rows: int, cols: int, inner_ratio: float = 1.0):
     """Split binary ROI to rows x cols cells and return filled-pixel matrix."""
     h, w = binary_img.shape[:2]

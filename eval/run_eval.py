@@ -326,6 +326,8 @@ def aggregate(results: list) -> dict:
 
     total_graded_q = sum(r.get("graded_questions") or 0 for r in valid)
     total_graded_detected = sum(r.get("graded_detected_count") or 0 for r in valid)
+    total_correct = sum(r.get("correct_count") or 0 for r in valid)
+    total_wrong = sum(r.get("wrong_count") or 0 for r in valid)
     total_meaningful_unc = sum(r.get("meaningful_uncertain_count") or 0 for r in valid)
     total_reg_agree = sum(r["regression_agree"] for r in valid if r.get("regression_total", 0) > 0)
     total_reg_total = sum(r["regression_total"] for r in valid if r.get("regression_total", 0) > 0)
@@ -349,6 +351,12 @@ def aggregate(results: list) -> dict:
         "score_accuracy_pct": f"{len(score_matches)/len(score_evaluated)*100:.1f}%" if score_evaluated else "N/A",
         "graded_detection_rate": graded_detection_rate,
         "graded_detection_rate_pct": f"{graded_detection_rate*100:.1f}%" if graded_detection_rate is not None else "N/A",
+        "true_detection_accuracy": round(total_correct / total_graded_q, 4) if total_graded_q else None,
+        "true_detection_accuracy_pct": f"{total_correct/total_graded_q*100:.1f}%" if total_graded_q else "N/A",
+        "wrong_detection_rate": round(total_wrong / total_graded_q, 4) if total_graded_q else None,
+        "wrong_detection_rate_pct": f"{total_wrong/total_graded_q*100:.1f}%" if total_graded_q else "N/A",
+        "uncertain_rate": round(total_meaningful_unc / total_graded_q, 4) if total_graded_q else None,
+        "uncertain_rate_pct": f"{total_meaningful_unc/total_graded_q*100:.1f}%" if total_graded_q else "N/A",
         "mean_meaningful_uncertain": round(total_meaningful_unc / len(valid), 2) if valid else None,
         "regression_rate": round(total_reg_agree / total_reg_total, 4) if total_reg_total else None,
         "regression_rate_pct": f"{total_reg_agree/total_reg_total*100:.1f}%" if total_reg_total else "N/A",
@@ -367,7 +375,7 @@ def print_summary_table(all_results: list, category: str):
     cats = sorted(set(r["category"] for r in all_results))
     print()
     print("=== OMR Eval Report ===")
-    header = f"{'Category':<20} | {'Images':>6} | {'Score-Acc':>9} | {'G-DetRate':>9} | {'G-Unc':>5} | {'Perfect':>7} | {'Regression':>10} | {'BETTER/WORSE':>12}"
+    header = f"{'Category':<20} | {'Images':>6} | {'True-Acc':>8} | {'G-DetRate':>9} | {'Wrong':>6} | {'Uncertain':>9} | {'G-Unc':>5} | {'BETTER/WORSE':>12}"
     print(header)
     print("-" * len(header))
     for cat in cats:
@@ -375,12 +383,12 @@ def print_summary_table(all_results: list, category: str):
         m = aggregate(cat_results)
         g_unc = str(m["mean_meaningful_uncertain"] or "?")
         bw = f"{m['improved_count']}/{m['regressed_count']}"
-        print(f"{cat:<20} | {m['total_images']:>6} | {m['score_accuracy_pct']:>9} | {m['graded_detection_rate_pct']:>9} | {g_unc:>5} | {m['perfect_images_pct']:>7} | {m['regression_rate_pct']:>10} | {bw:>12}")
+        print(f"{cat:<20} | {m['total_images']:>6} | {m['true_detection_accuracy_pct']:>8} | {m['graded_detection_rate_pct']:>9} | {m['wrong_detection_rate_pct']:>6} | {m.get('uncertain_rate_pct', '?'):>9} | {g_unc:>5} | {bw:>12}")
     print("-" * len(header))
     total_m = aggregate(all_results)
     g_unc = str(total_m["mean_meaningful_uncertain"] or "?")
     bw = f"{total_m['improved_count']}/{total_m['regressed_count']}"
-    print(f"{'TOTAL':<20} | {total_m['total_images']:>6} | {total_m['score_accuracy_pct']:>9} | {total_m['graded_detection_rate_pct']:>9} | {g_unc:>5} | {total_m['perfect_images_pct']:>7} | {total_m['regression_rate_pct']:>10} | {bw:>12}")
+    print(f"{'TOTAL':<20} | {total_m['total_images']:>6} | {total_m['true_detection_accuracy_pct']:>8} | {total_m['graded_detection_rate_pct']:>9} | {total_m['wrong_detection_rate_pct']:>6} | {total_m.get('uncertain_rate_pct', '?'):>9} | {g_unc:>5} | {bw:>12}")
     if total_m["top_uncertain_questions"]:
         print()
         top = ", ".join(f"Q{e['question']}({e['pct']})" for e in total_m["top_uncertain_questions"][:5])

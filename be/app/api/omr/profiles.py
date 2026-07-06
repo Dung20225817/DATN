@@ -88,7 +88,6 @@ async def save_form_profile(payload: Dict[str, Any] = Body(...)):
     )
 
     strategy_payload = {
-        "crop_quad": _sanitize_quad(strategy_in.get("crop_quad") if "crop_quad" in strategy_in else existing_strategy.get("crop_quad")),
         "sid_roi": _sanitize_norm_rect(strategy_in.get("sid_roi") if "sid_roi" in strategy_in else existing_strategy.get("sid_roi")),
         "mcq_roi": _sanitize_norm_rect(strategy_in.get("mcq_roi") if "mcq_roi" in strategy_in else existing_strategy.get("mcq_roi")),
         "exam_code_roi": _sanitize_norm_rect(strategy_in.get("exam_code_roi") if "exam_code_roi" in strategy_in else existing_strategy.get("exam_code_roi")),

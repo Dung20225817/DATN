@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import cv2
 import numpy as np
 
 from . import omr_marker_utils
-from .omr_utils import _clip_rect, _order_quad_points, _warp_by_manual_quad
+from .omr_utils import _order_quad_points
 
 
 def _safe_float(raw, default=0.0) -> float:
@@ -33,68 +33,6 @@ def _norm_quad_from_points(points: np.ndarray, img_w: int, img_h: int) -> Dict[s
         "br": _pt(pts[2]),
         "bl": _pt(pts[3]),
     }
-
-
-def _parse_manual_quad(
-    crop_tl_x,
-    crop_tl_y,
-    crop_tr_x,
-    crop_tr_y,
-    crop_br_x,
-    crop_br_y,
-    crop_bl_x,
-    crop_bl_y,
-) -> Optional[List[Tuple[float, float]]]:
-    vals = [crop_tl_x, crop_tl_y, crop_tr_x, crop_tr_y, crop_br_x, crop_br_y, crop_bl_x, crop_bl_y]
-    if not all(v is not None for v in vals):
-        return None
-
-    parsed: List[Tuple[float, float]] = []
-    for i in range(0, 8, 2):
-        x = _safe_float(vals[i], -1.0)
-        y = _safe_float(vals[i + 1], -1.0)
-
-        if x > 1.0 and x <= 100.0:
-            x /= 100.0
-        if y > 1.0 and y <= 100.0:
-            y /= 100.0
-
-        if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
-            return None
-        parsed.append((float(x), float(y)))
-
-    return parsed
-
-
-def _apply_optional_rect_crop(img_bgr, crop_x, crop_y, crop_w, crop_h):
-    vals = [crop_x, crop_y, crop_w, crop_h]
-    if not all(v is not None for v in vals):
-        return img_bgr, False
-
-    h, w = img_bgr.shape[:2]
-    x = _safe_float(crop_x, -1.0)
-    y = _safe_float(crop_y, -1.0)
-    rw = _safe_float(crop_w, -1.0)
-    rh = _safe_float(crop_h, -1.0)
-
-    if max(abs(x), abs(y), abs(rw), abs(rh)) <= 1.5:
-        x *= w
-        y *= h
-        rw *= w
-        rh *= h
-
-    x = int(round(x))
-    y = int(round(y))
-    rw = int(round(rw))
-    rh = int(round(rh))
-    if rw < 64 or rh < 64:
-        return img_bgr, False
-
-    x, y, rw, rh = _clip_rect(x, y, rw, rh, w, h)
-    cropped = img_bgr[y : y + rh, x : x + rw]
-    if cropped.size == 0:
-        return img_bgr, False
-    return cropped, True
 
 
 def _find_page_quad_by_contour(gray_img: np.ndarray) -> Optional[np.ndarray]:
@@ -158,7 +96,6 @@ def _warp_to_standard_layout(
     height_img: int,
     a4_warp_w: int,
     a4_warp_h: int,
-    manual_quad_norm=None,
 ):
     src_h, src_w = img_bgr.shape[:2]
     strategy = "resize-only"
@@ -170,32 +107,23 @@ def _warp_to_standard_layout(
 
     working = img_bgr
 
-    if manual_quad_norm is not None:
-        manual = _warp_by_manual_quad(img_bgr, manual_quad_norm, target_size=(a4_warp_w, a4_warp_h))
-        if manual is not None and manual.size > 0:
-            working = manual
-            strategy = "manual-quad"
-            global_warp_used = True
-            info["manual_quad"] = list(manual_quad_norm)
-
-    if not global_warp_used:
-        gray_src = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        quad, quad_strategy = _detect_page_quad(gray_src)
-        if quad is not None:
-            dst = np.array(
-                [
-                    [0.0, 0.0],
-                    [float(a4_warp_w - 1), 0.0],
-                    [float(a4_warp_w - 1), float(a4_warp_h - 1)],
-                    [0.0, float(a4_warp_h - 1)],
-                ],
-                dtype=np.float32,
-            )
-            matrix = cv2.getPerspectiveTransform(quad.astype(np.float32), dst)
-            working = cv2.warpPerspective(img_bgr, matrix, (a4_warp_w, a4_warp_h))
-            strategy = f"coordinate-global-a4:{quad_strategy}"
-            global_warp_used = True
-            info["detected_quad"] = _norm_quad_from_points(quad, src_w, src_h)
+    gray_src = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    quad, quad_strategy = _detect_page_quad(gray_src)
+    if quad is not None:
+        dst = np.array(
+            [
+                [0.0, 0.0],
+                [float(a4_warp_w - 1), 0.0],
+                [float(a4_warp_w - 1), float(a4_warp_h - 1)],
+                [0.0, float(a4_warp_h - 1)],
+            ],
+            dtype=np.float32,
+        )
+        matrix = cv2.getPerspectiveTransform(quad.astype(np.float32), dst)
+        working = cv2.warpPerspective(img_bgr, matrix, (a4_warp_w, a4_warp_h))
+        strategy = f"coordinate-global-a4:{quad_strategy}"
+        global_warp_used = True
+        info["detected_quad"] = _norm_quad_from_points(quad, src_w, src_h)
 
     interp = cv2.INTER_AREA if working.shape[1] >= width_img else cv2.INTER_CUBIC
     resized = cv2.resize(working, (width_img, height_img), interpolation=interp)

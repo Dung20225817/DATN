@@ -1,0 +1,117 @@
+\chapter{ĐẶC TẢ TEST CASE}
+\label{app:test-cases}
+
+Phụ lục này định nghĩa đầy đủ các test case được nhắc đến trong Chương~6. Mỗi test case mô tả điều kiện đầu vào, các bước thực hiện và tiêu chí chấp nhận tương ứng.
+
+\renewcommand{\arraystretch}{1.3}
+
+% -------------------------------------------------------
+\section*{TC-GRADE-01: Chấm phiếu chuẩn}
+\addcontentsline{toc}{section}{TC-GRADE-01: Chấm phiếu chuẩn}
+
+\begin{longtable}{|L{3.5cm}|L{10.5cm}|}
+\hline
+\textbf{Mã test case} & TC-GRADE-01 \\
+\hline
+\textbf{Tên} & Chấm một phiếu trắc nghiệm chuẩn \\
+\hline
+\textbf{Mục tiêu} & Xác nhận pipeline 15 bước xử lý đúng phiếu chụp trong điều kiện ánh sáng tốt, bốn marker rõ ràng và bong bóng tô đậm. \\
+\hline
+\textbf{Điều kiện tiên quyết} & Bài thi đã được tạo và có ít nhất một bộ đáp án; Form Profile tương ứng đã được cấu hình. \\
+\hline
+\textbf{Dữ liệu đầu vào} & Ảnh JPEG phiếu 40 câu, chụp thẳng góc, ánh sáng đồng đều, bốn marker đen góc rõ nét, học sinh tô đậm đáp án. \\
+\hline
+\textbf{Các bước thực hiện} &
+\begin{enumerate}[leftmargin=1em]
+  \item Đăng nhập, mở bài thi đã có đáp án.
+  \item Chọn ảnh phiếu từ thiết bị và nhấn \textbf{Chấm bài}.
+  \item Frontend gửi \path{POST /api/omr/grade} kèm ảnh và tham số bài thi.
+  \item Backend chạy pipeline 15 bước, trả JSON kết quả và URL overlay.
+  \item Frontend hiển thị điểm, MSSV, mã đề và ảnh overlay.
+\end{enumerate} \\
+\hline
+\textbf{Kết quả kỳ vọng} &
+\begin{itemize}[leftmargin=1em]
+  \item HTTP 200, trường \texttt{success = true}.
+  \item \texttt{uncertain\_count = 0} hoặc rất nhỏ (< 2 câu/40 câu).
+  \item \texttt{warning\_codes} không chứa \texttt{MCQ\_MAP\_SEARCH\_RESCUE}.
+  \item Ảnh overlay hiển thị ô đúng màu xanh, ô sai màu đỏ.
+  \item Bản ghi lưu vào \path{omr\_grade\_result}, \path{last\_result} cập nhật.
+\end{itemize} \\
+\hline
+\textbf{Test case liên quan} & TC-GRADE-02 \\
+\hline
+\end{longtable}
+
+% -------------------------------------------------------
+\section*{TC-GRADE-02: Chấm phiếu có câu không rõ (kích hoạt Rescue)}
+\addcontentsline{toc}{section}{TC-GRADE-02: Chấm phiếu có câu không rõ}
+
+\begin{longtable}{|L{3.5cm}|L{10.5cm}|}
+\hline
+\textbf{Mã test case} & TC-GRADE-02 \\
+\hline
+\textbf{Tên} & Chấm phiếu có bong bóng tô mờ và kích hoạt MCQ Map Search Rescue \\
+\hline
+\textbf{Mục tiêu} & Xác nhận cơ chế Rescue kích hoạt khi \texttt{uncertain\_count} vượt ngưỡng và cải thiện kết quả decode MCQ. \\
+\hline
+\textbf{Điều kiện tiên quyết} & Như TC-GRADE-01. Profile không có \texttt{disable\_mcq\_rescue = true}. \\
+\hline
+\textbf{Dữ liệu đầu vào} & Ảnh phiếu 40 câu chụp dưới ánh đèn huỳnh quang lệch, một số bong bóng tô mờ, lưới MCQ có thể lệch vài pixel sau warp. \\
+\hline
+\textbf{Các bước thực hiện} &
+\begin{enumerate}[leftmargin=1em]
+  \item Thực hiện như TC-GRADE-01 với ảnh phiếu có điều kiện khó.
+  \item Quan sát trường \texttt{warning\_codes} và \texttt{uncertain\_count} trong JSON trả về.
+  \item Kiểm tra file \path{bubble\_confidence\_json} trong \path{storage/uploads/omr/}.
+\end{enumerate} \\
+\hline
+\textbf{Kết quả kỳ vọng} &
+\begin{itemize}[leftmargin=1em]
+  \item \texttt{uncertain\_count} baseline vượt $\max(4,\ \lfloor 0{,}60 \times 40 \rceil) = 24$.
+  \item \texttt{warning\_codes} chứa \texttt{MCQ\_MAP\_SEARCH\_RESCUE}.
+  \item Metadata ghi \texttt{line\_h\_before}, \texttt{line\_h\_after}, \texttt{top\_shift\_px}, \texttt{tested} (số ứng viên đã thử).
+  \item \texttt{uncertain\_count} sau Rescue nhỏ hơn baseline ít nhất 2 câu (nếu Rescue thành công).
+  \item Nếu không có ứng viên nào tốt hơn, kết quả baseline được giữ nguyên.
+\end{itemize} \\
+\hline
+\textbf{Test case liên quan} & TC-GRADE-01 \\
+\hline
+\end{longtable}
+
+% -------------------------------------------------------
+\section*{TC-CAM-01: Smart Camera Scanner}
+\addcontentsline{toc}{section}{TC-CAM-01: Smart Camera Scanner}
+
+\begin{longtable}{|L{3.5cm}|L{10.5cm}|}
+\hline
+\textbf{Mã test case} & TC-CAM-01 \\
+\hline
+\textbf{Tên} & Tự động phát hiện phiếu và chụp ảnh bằng Smart Camera Scanner \\
+\hline
+\textbf{Mục tiêu} & Xác nhận máy trạng thái camera hoạt động đúng, chuyển từ \texttt{DETECTING} sang \texttt{LOCKED} sau bốn frame liên tiếp và tự chụp sau 1300ms. \\
+\hline
+\textbf{Điều kiện tiên quyết} & Trình duyệt chạy trên HTTPS hoặc localhost; thiết bị có camera; bài thi đã có Form Profile với \texttt{corner\_markers} được cấu hình. \\
+\hline
+\textbf{Dữ liệu đầu vào} & Luồng video camera hướng vào phiếu trắc nghiệm đặt trên mặt phẳng đủ sáng, bốn marker đen góc phiếu nằm trong khung viewfinder. \\
+\hline
+\textbf{Các bước thực hiện} &
+\begin{enumerate}[leftmargin=1em]
+  \item Mở tab \textbf{Camera} trong màn hình chấm bài.
+  \item Nhấn \textbf{Bật camera} -- trạng thái chuyển sang \texttt{ACTIVE}.
+  \item Hướng camera vào phiếu -- hệ thống phân tích frame mỗi 130ms (\texttt{DETECTING}).
+  \item Căn phiếu vào khung: khi bốn \texttt{darkRatio} $\geq 0.14$ và \texttt{centerLuma} $\geq 52$ qua đủ bốn frame liên tiếp, khung chuyển xanh (\texttt{LOCKED}).
+  \item Sau 1300ms ở trạng thái \texttt{LOCKED}, hệ thống tự gọi \texttt{canvas.toBlob()} -- ảnh thêm vào \texttt{pickedFiles} và trạng thái về \texttt{DETECTING}.
+\end{enumerate} \\
+\hline
+\textbf{Kết quả kỳ vọng} &
+\begin{itemize}[leftmargin=1em]
+  \item Luồng video hiển thị đúng trong viewfinder.
+  \item Khung chuyển xanh (class \texttt{match}) khi đủ điều kiện marker.
+  \item Ảnh JPEG (quality 0.92) được thêm vào danh sách -- giáo viên không cần nhấn nút chụp.
+  \item Khi môi trường không phải HTTPS/localhost, giao diện hiển thị cảnh báo rõ ràng thay vì lỗi im lặng.
+\end{itemize} \\
+\hline
+\textbf{Test case liên quan} & TC-GRADE-01 (ảnh từ camera được xử lý bởi cùng pipeline) \\
+\hline
+\end{longtable}

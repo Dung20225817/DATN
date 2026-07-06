@@ -1,0 +1,328 @@
+\chapter{PIPELINE XỬ LÝ ẢNH OMR VÀ ĐÁNH GIÁ}
+
+Chương này trình bày chi tiết pipeline xử lý ảnh OMR gồm 15 bước, từ chuẩn hóa ảnh đầu vào đến tính điểm và lưu kết quả. Ngoài mô tả từng bước pipeline, chương trình bày hai luồng chấm điểm mà backend cung cấp: luồng chấm một phiếu đơn lẻ và luồng chấm hàng loạt, bao gồm cách frontend tương tác với API và cách backend xử lý song song lỗi từng ảnh. Phần cuối đánh giá định lượng toàn hệ thống trên bộ dữ liệu 61 ảnh chụp điện thoại ở bốn điều kiện khác nhau.
+
+\section{Thiết kế pipeline xử lý ảnh OMR}
+\begin{figure}[H]
+  \centering
+  \includegraphics[
+    width=0.85\textwidth,
+    height=0.78\textheight,
+    keepaspectratio
+  ]{figures/activity_diagram_1.png}
+  \label{fig:omr-pipeline-1}
+\end{figure}
+\begin{figure}[H]
+  \centering
+  \includegraphics[
+    width=0.85\textwidth,
+    height=0.78\textheight,
+    keepaspectratio
+  ]{figures/activity_diagram_2.png}
+  \caption{Pipeline xử lý ảnh OMR}
+  \label{fig:omr-pipeline}
+\end{figure}
+
+Toàn bộ pipeline chạy phía backend: giáo viên chỉ cần gửi ảnh phiếu thi từ điện thoại lên, hệ thống trả về điểm số cùng ảnh minh chứng trực quan mà không yêu cầu thao tác thêm. Pipeline gồm 15 bước chia thành bốn giai đoạn logic: \textbf{(1) Chuẩn hóa ảnh} (bước 1--6) - đọc ảnh, crop sơ bộ nếu cần, hiệu chỉnh phối cảnh về kích thước chuẩn, cân bằng ánh sáng và nhị phân hóa để tách vùng tô đen khỏi nền giấy; \textbf{(2) Xác định vùng đọc} (bước 7--10) - phát hiện các marker định vị trên phiếu, suy luận hình học vùng câu hỏi và dựng các vùng quan tâm (ROI) cần nhận diện; \textbf{(3) Giải mã nội dung} (bước 11--14) - đọc MSSV, mã đề và đáp án trắc nghiệm từ từng ROI, nếu lưới câu hỏi còn lệch thì tự hiệu chỉnh lại; \textbf{(4) Tính điểm và lưu kết quả} (bước 15) - so sánh đáp án, tính điểm, sinh ảnh overlay trực quan và lưu vào cơ sở dữ liệu. Mỗi bước nhận dữ liệu từ bước trước theo hướng một chiều: từ ảnh thô sang ảnh chuẩn, từ ảnh chuẩn sang ROI, từ ROI sang kết quả giải mã và cuối cùng sang điểm số.
+
+\begin{longtable}{|L{2.6cm}|L{3.9cm}|L{3.55cm}|L{3.55cm}|}
+\caption{Pipeline xử lý ảnh theo input/output}
+\label{tab:pipeline-io}\\
+\hline
+\textbf{Bước} & \textbf{Mục đích} & \textbf{Input} & \textbf{Output} \\
+\hline
+Đọc ảnh & Nạp ảnh vào OpenCV & File ảnh upload hoặc ảnh chụp & Ma trận ảnh BGR \\
+\hline
+Crop/warp & Chuẩn hóa phối cảnh phiếu & Ảnh gốc, marker hoặc crop quad & Ảnh chuẩn theo kích thước profile \\
+\hline
+Binarize & Tách vùng tô đen khỏi nền giấy & Ảnh xám & Ảnh nhị phân đảo màu \\
+\hline
+Detect marker & Xác định vị trí phiếu và các anchor & Ảnh nhị phân & Tọa độ marker/anchor \\
+\hline
+Build ROI & Tạo vùng MSSV, mã đề, kết quả khoanh, họ tên & thông tin phiếu mẫu, marker, ảnh đã warp & Danh sách vùng đọc trên ảnh đã chuẩn hóa phối cảnh (\textit{ROI post-warp}) \\
+\hline
+Decode numeric & Đọc MSSV và mã đề & Vùng lưới số của MSSV và mã đề & \path{student_id}, \path{exam_code}, confidence \\
+\hline
+Decode MCQ & Đọc đáp án từng câu & ROI MCQ, ảnh xám, ảnh nhị phân & Danh sách đáp án, câu không chắc chắn \\
+\hline
+Rescue & Hiệu chỉnh lưới nếu nhiều câu không chắc chắn & Kết quả baseline + cấu hình \path{local_grid_search} & Kết quả MCQ tốt hơn nếu có \\
+\hline
+Scoring & So sánh với đáp án & Kết quả decode + \path{answer_sets} & Điểm và chi tiết đúng/sai \\
+\hline
+Save overlay & Tạo bằng chứng trực quan & Ảnh chuẩn + kết quả decode & Overlay, crop, confidence JSON \\
+\hline
+\end{longtable}
+
+Pipeline xử lý ảnh OMR không chỉ là một chuỗi thao tác đọc ảnh và đếm ô tô đen. Ảnh đầu vào của hệ thống được chụp bằng điện thoại nên thường có nhiều sai lệch so với ảnh quét bằng máy chuyên dụng, ví dụ như ảnh bị nghiêng, ánh sáng không đều, bóng đổ, nền giấy không trắng tuyệt đối, marker bị mờ hoặc vùng câu hỏi bị lệch vài pixel. Vì vậy, pipeline được thiết kế theo hướng từng bước chuẩn hóa ảnh, xác định vùng cần đọc, nhận diện nội dung tô và cuối cùng lưu lại bằng chứng trực quan để người dùng có thể kiểm tra kết quả. \\
+\paragraph{Chi tiết các bước được triển khai như sau:}
+
+\paragraph{Bước 1. Nhận request và đọc ảnh}
+
+Quá trình xử lý bắt đầu khi frontend gửi ảnh phiếu thi lên backend thông qua API chấm điểm. Ảnh được gửi kèm với các thông tin nghiệp vụ như mã người dùng, mã bài thi, bộ đáp án, số câu hỏi và mã Form Profile. Backend trước tiên lưu file upload vào thư mục runtime, sau đó dùng OpenCV để đọc file ảnh thành ma trận ảnh BGR.
+
+Bước này cần thiết vì toàn bộ các thao tác xử lý ảnh phía sau đều làm việc trên ma trận pixel. Nếu file ảnh không đọc được, sai định dạng hoặc bị lỗi trong quá trình upload, hệ thống phải phát hiện sớm để trả thông báo lỗi thay vì tiếp tục xử lý và gây lỗi ở các bước sau.
+
+\paragraph{Bước 2. Chuẩn hóa tham số bài thi}
+
+Sau khi ảnh được đọc thành công, hệ thống chuẩn hóa các tham số liên quan đến bài thi và mẫu phiếu, bao gồm số câu hỏi, số lựa chọn mỗi câu, số dòng mỗi block, số chữ số MSSV và mã profile đang sử dụng. Các tham số này có thể đến từ request của frontend hoặc từ Form Profile đã lưu.
+
+Bước này giúp pipeline có một cấu hình thống nhất trước khi dựng lưới đọc phiếu. Nếu số câu hoặc số dòng mỗi block bị sai, hệ thống có thể chia sai vùng câu hỏi, đọc lệch hàng hoặc đọc thiếu câu. Vì vậy, việc chuẩn hóa tham số là bước chuẩn bị quan trọng để các bước dựng ROI và decode hoạt động ổn định.
+
+\paragraph{Bước 3. Cắt ảnh ban đầu nếu có cấu hình crop}
+
+Trong một số trường hợp, ảnh đầu vào chứa nhiều phần thừa xung quanh tờ giấy như mặt bàn, tay cầm điện thoại hoặc các vật thể khác. Nếu người dùng hoặc profile cung cấp vùng crop ban đầu, backend sẽ cắt ảnh theo vùng này trước khi xử lý tiếp.
+
+Mục đích của bước này là giảm nhiễu cho quá trình phát hiện phiếu. Khi vùng ảnh ngoài tờ giấy được loại bỏ, các thuật toán tìm contour, marker hoặc góc phiếu sẽ ít bị nhầm với vật thể khác. Nếu bỏ qua bước này trong những ảnh có nền phức tạp, hệ thống có thể chọn sai vùng giấy hoặc không tìm được marker chính xác.
+
+\paragraph{Bước 4. Chuẩn hóa phối cảnh toàn trang}
+
+Ảnh chụp bằng điện thoại thường không song song hoàn toàn với mặt giấy, dẫn đến phiếu bị nghiêng hoặc méo phối cảnh. Hệ thống giải quyết vấn đề này bằng cách phát hiện bốn điểm góc của tờ phiếu theo thứ tự ưu tiên giảm dần: (1) \textit{phát hiện bốn marker đen góc} -- nếu bốn marker vuông tại bốn góc phiếu đủ rõ ràng, hệ thống dùng tâm của chúng làm bốn điểm nguồn (chiến lược marker góc); (2) \textit{phát hiện contour trang} -- áp dụng GaussianBlur $(5\times5)$, phát hiện cạnh Canny~\cite{canny} với ngưỡng thấp/cao là 60/180, giãn nở cạnh một bước, rồi tìm contour lớn nhất chiếm ít nhất 18\% diện tích ảnh và xấp xỉ đa giác với $\varepsilon = 0.02 \times \text{chu vi}$; nếu thu được đúng 4 điểm thì dùng chiến lược contour; (3) nếu cả hai cách trên đều thất bại, hệ thống fallback về \textit{resize thuần túy}.
+
+Khi đã có bốn điểm nguồn, phép biến đổi phối cảnh~\cite{gonzalez-dip} tính ma trận chiếu $3\times3$ từ bốn điểm nguồn và đích, sau đó áp dụng phép chiếu phối cảnh để đưa ảnh về kích thước trung gian $2480\times3508$ (tương đương A4 ở 300 DPI). Cuối cùng ảnh được resize về kích thước chuẩn $1000\times1400$ pixel - đây là hệ tọa độ mà toàn bộ Form Profile dùng để định nghĩa vị trí ROI.
+
+Bước này là nền tảng của toàn pipeline: mọi tọa độ ROI trong Form Profile đều được định nghĩa theo hệ tọa độ $1000\times1400$ sau warp. Nếu không có bước chuẩn hóa phối cảnh, cùng một ô đáp án sẽ nằm ở pixel khác nhau tùy theo góc chụp, khiến pipeline đọc sai vùng hoặc lấy mẫu lệch khỏi tâm bong bóng.
+
+\paragraph{Bước 5. Chuyển ảnh sang mức xám và cân bằng nền}
+
+Sau khi ảnh được đưa về mặt phẳng chuẩn, hệ thống chuyển ảnh màu BGR sang ảnh mức xám. Ảnh xám giảm độ phức tạp dữ liệu từ ba kênh xuống một kênh vì bài toán OMR chỉ cần phân biệt vùng tối (tô bút) với nền giấy sáng.
+
+Tiếp theo, hệ thống ước lượng ``nền sáng cục bộ'' bằng phép toán hình thái học~\cite{gonzalez-dip} Close với kernel hình ellipse kích thước $k\times k$ trong đó $k = \max(31,\; (\min(h,w) \div 9) \mathbin{|} 1)$ (phép OR nhằm đảm bảo $k$ là số lẻ). Phép toán này làm mờ các vùng tối nhỏ (nét tô, marker) trong khi giữ lại xu hướng sáng/tối tổng thể của nền. Sau đó ảnh xám được chia cho nền ước lượng và quy đổi về thang [0, 255], bình thường hóa độ sáng theo vùng. Cuối cùng áp dụng GaussianBlur $3\times3$ để khử nhiễu cao tần trước bước nhị phân hóa.
+
+Kỹ thuật chia nền này giúp các vùng tô mờ vẫn giữ được tín hiệu tương đối so với nền xung quanh, đồng thời triệt tiêu bóng đổ và chênh lệch ánh sáng giữa hai nửa phiếu. Nếu bỏ qua bước này, ngưỡng Otsu tính trên toàn ảnh dễ bị lệch do vùng nền tối không đều, dẫn đến mất nét tô nhẹ ở các ô bị bóng đổ hoặc tạo nhiễu tại vùng giấy sáng bất thường.
+
+\paragraph{Bước 6. Nhị phân hóa ảnh}
+
+Nhị phân hóa chuyển ảnh xám đã cân bằng nền thành ảnh chỉ gồm hai giá trị: nền trắng (0) và vùng tối nổi bật (255 -- đảo màu so với quy ước thông thường). Hệ thống dùng thuật toán Otsu~\cite{otsu} để tự động tính ngưỡng toàn cục $T^*$ bằng cách cực đại hóa phương sai liên lớp giữa pixel nền và pixel tô. Nhờ bước cân bằng nền ở trên, histogram ảnh luôn có hai đỉnh rõ ràng, giúp Otsu chọn ngưỡng ổn định mà không cần can thiệp thủ công.
+
+Sau khi nhị phân hóa, hệ thống áp dụng thêm phép mở hình thái học (Morphological Open) với kernel $2\times2$ (một bước lặp) để loại bỏ các pixel nhiễu cô lập nhỏ trước khi đưa ảnh nhị phân đảo màu vào các bước phát hiện marker và decode ô tô.
+
+\paragraph{Bước 7. Phát hiện marker định vị}
+
+Marker là các dấu đen được in trên phiếu nhằm giúp hệ thống xác định cấu trúc trang. Sau khi có ảnh nhị phân, hệ thống tìm các vùng đen có hình dạng và kích thước phù hợp với marker, sau đó lọc ra những marker đáng tin cậy.
+
+Marker được dùng như các điểm neo để xác định vị trí phiếu, suy luận vùng câu hỏi và kiểm tra xem ảnh có bị lệch hay không. Nếu không có bước phát hiện marker, hệ thống phải dựa hoàn toàn vào tọa độ cố định trong profile. Cách này kém ổn định vì ảnh chụp thực tế luôn có sai lệch nhỏ so với mẫu lý tưởng.
+
+\paragraph{Bước 8. Suy luận hình học vùng câu hỏi MCQ}
+
+Từ thông tin marker và cấu hình profile, hệ thống suy luận hình học của vùng câu hỏi trắc nghiệm, bao gồm số block câu hỏi, khoảng cách giữa các dòng, vị trí dòng đầu tiên và vùng ngang chứa các lựa chọn A/B/C/D.
+
+Bước này giúp hệ thống không chỉ đọc theo một vùng cố định mà còn hiểu cấu trúc bên trong vùng MCQ. Điều này đặc biệt quan trọng với các phiếu có nhiều block câu hỏi hoặc số câu lớn. Nếu suy luận sai hình học, các câu có thể bị đọc lệch dòng, lệch cột hoặc bị gộp nhầm sang block khác.
+
+\paragraph{Bước 9. Dựng các ROI cần đọc}
+
+ROI là các vùng quan tâm mà hệ thống cần đọc trên phiếu, gồm vùng MSSV, vùng mã đề, vùng câu hỏi trắc nghiệm và có thể có vùng họ tên viết tay. Các ROI được dựng dựa trên Form Profile, marker và ảnh đã warp.
+
+Việc tách ROI giúp pipeline chỉ xử lý những vùng cần thiết thay vì phân tích toàn bộ ảnh. Điều này vừa tăng tốc độ xử lý, vừa giảm khả năng nhiễu từ các phần không liên quan như tiêu đề, hướng dẫn làm bài hoặc đường viền phiếu. Các ROI này là dữ liệu đầu vào trực tiếp cho các bộ giải mã MSSV, mã đề và đáp án.
+
+\paragraph{Bước 10. Tinh chỉnh ROI vùng MCQ}
+
+Trong thực tế, ROI vùng MCQ lấy từ profile có thể chưa khớp hoàn toàn với vùng câu hỏi sau khi ảnh được chụp và warp. Vì vậy, hệ thống có thêm bước tinh chỉnh ROI MCQ dựa trên marker nội bộ hoặc cấu trúc lưới câu hỏi.
+
+Mục đích của bước này là đưa tâm các ô đáp án về gần đúng vị trí thực tế hơn. Chỉ cần lệch vài pixel theo chiều dọc, hệ thống có thể lấy mẫu nhầm giữa hai hàng câu hỏi, đặc biệt ở các câu cuối block. Bước refine ROI giúp giảm số câu không chắc chắn và cải thiện độ ổn định của quá trình decode MCQ.
+
+\paragraph{Bước 11. Nhận diện MSSV}
+
+Vùng MSSV là lưới số gồm $D$ cột (số chữ số MSSV) $\times$ 10 hàng (chữ số 0--9), có thể có thêm một hàng ghi tay ở trên cùng (\texttt{has\_write\_row = True}). Hệ thống chia đều ROI theo chiều ngang thành $D$ cột và theo chiều dọc thành 10 (hoặc 11) hàng, tạo lưới ô đều nhau.
+
+Với mỗi ô tại vị trí $(r, c)$, hệ thống trích vùng tâm (inner ratio 74\%) của ô từ ảnh xám và ảnh nhị phân, rồi tính điểm tô theo công thức:
+
+\begin{equation}
+\begin{split}
+\text{score} &= 0.55 \times \frac{\text{countNonZero(binary\_cell)}}{\text{area}} \\[3pt]
+&\quad + 0.30 \times \left(1 - \frac{\text{mean(gray\_cell)}}{255}\right) \\[3pt]
+&\quad + 0.15 \times \left(1 - \frac{P_{25}(\text{gray\_cell})}{255}\right)
+\end{split}
+\label{eq:cell_score}
+\end{equation}
+
+trong đó $P_{25}$ là phân vị thứ 25 của mức xám trong ô -- giúp tăng tính nhạy cảm với vùng tâm bong bóng tối nhất. Mỗi cột chọn hàng có điểm tô cao nhất làm chữ số; độ tin cậy được tính bằng $\text{conf} = \text{best} / \text{second}$; cột bị đánh dấu \texttt{?} nếu điểm tô cao nhất dưới ngưỡng $0.07$ hoặc $\text{conf} < 1.03$.
+
+Để đối phó với trường hợp hàng ghi tay gây lệch hàng toàn cột, hệ thống decode MSSV hai lần (có và không có write-row) rồi so sánh kết quả. Nếu phát hiện toàn bộ cột bị dịch đúng $+1$ hoặc $-1$ hàng (độ lệch $\in \{1, 9\}$ theo modulo 10), hệ thống tự động chọn chế độ decode phù hợp hơn và ghi cảnh báo tương ứng vào kết quả.
+
+\paragraph{Bước 12. Nhận diện mã đề}
+
+Mã đề được xử lý theo cùng cơ chế nhận diện lưới số như MSSV, với ba cột và không có hàng ghi tay. Sau khi đọc được chuỗi ba chữ số, hệ thống chuẩn hóa về định dạng ba chữ số có zero-padding (ví dụ \texttt{"7"} $\to$ \texttt{"007"}) rồi tra trong danh sách bộ đáp án của bài thi để chọn đúng bộ tương ứng với mã đề vừa đọc được.
+
+Bước này có ảnh hưởng dây chuyền trực tiếp đến tính đúng đắn của điểm số. Với bài thi có nhiều mã đề, chỉ cần một trong ba chữ số bị đọc sai, hệ thống sẽ so sánh đáp án thí sinh với bộ đáp án hoàn toàn không tương ứng -- điểm trả về sai dù phần nhận diện MCQ hoàn toàn chính xác. Vì vậy, kết quả decode mã đề cũng được trả kèm giá trị confidence và trạng thái (\texttt{ok} / \texttt{uncertain}) để giáo viên có thể phát hiện khi ô tô mã đề không rõ ràng. Nếu mã đề đọc được không tồn tại trong \path{answer_sets}, hệ thống fallback về bộ đáp án của mã đề đang được đặt làm active trong bài thi và ghi cảnh báo vào trường \texttt{warnings} của kết quả.
+
+\paragraph{Bước 13. Nhận diện đáp án trắc nghiệm baseline}
+\label{sec:pipeline-buoc-13}
+
+Hệ thống chia vùng MCQ theo hình học lưới (line-height $\times$ block-width) ra từng ô $(\text{câu},\ \text{lựa chọn})$. Với mỗi ô tại câu $q$ lựa chọn $c$, hệ thống trích vùng tâm theo hai tỷ lệ: inner-78\% cho \textit{density} và inner-56\% cho \textit{center density}, sau đó lọc nhiễu bằng morphology erosion + connected component filter. Ba chỉ số đo tô được tính:
+
+\begin{align}
+\text{density} &= \frac{\text{countNonZero}(\text{cell\_binary})}{\text{area}} \\[4pt]
+\text{center\_density} &= \frac{\text{countNonZero}(\text{center\_binary})}{\text{center\_area}} \\[4pt]
+\text{score} &= 0.90 \times \text{density} + 0.10 \times \text{darkness}
+\end{align}
+
+trong đó $\text{darkness} = 0.55 \times \text{fill} + 0.30 \times \overline{\text{dark}} + 0.15 \times \text{dark}_{P25}$ (theo công thức~\ref{eq:cell_score}). Đáp án được chọn là lựa chọn có \texttt{density} cao nhất nếu vượt ngưỡng tô động:
+$$\text{dynamic\_mark} = \max\!\left(\text{min\_mark} \times 0.95,\ \min(0.60,\ \overline{\text{row\_density}} + 0.06)\right)$$
+
+Ngưỡng này tự điều chỉnh theo mật độ trung bình của hàng, giúp hệ thống chấp nhận ô tô mờ hơn khi toàn hàng tô nhẹ và nghiêm ngặt hơn khi hàng có nhiều pixel đen do nhiễu.
+
+Hệ thống còn áp dụng ba cơ chế bảo vệ bổ sung: (a) \textbf{Kiểm tra margin và conf\_ratio} -- câu bị đánh dấu không chắc chắn nếu $\text{best} - \text{second} < \text{min\_margin}$ hoặc $\text{best} / \text{second} < \text{min\_conf\_ratio}$; (b) \textbf{Phát hiện tô nhiều đáp án} (double-mark) -- khi $\geq 2$ ô vượt \texttt{dynamic\_mark} trong cùng một hàng; (c) \textbf{Noise gate} -- chặn lựa chọn nếu \texttt{center\_density} hoặc \texttt{dark\_P20} không vượt ngưỡng cục bộ (tính từ trung bình hàng), giúp loại bỏ tín hiệu giả do đường kẻ in hoặc vết bẩn thẳng hàng.
+
+Kết quả của bước này là danh sách đáp án, độ tin cậy, danh sách câu không chắc chắn và câu tô nhiều đáp án - là đầu vào trực tiếp cho bước Rescue tiếp theo.
+
+\paragraph{Bước 14. Cứu kết quả khi lưới MCQ bị lệch}
+
+Nếu kết quả baseline có quá nhiều câu không chắc chắn, hệ thống kích hoạt cơ chế \textbf{tự hiệu chỉnh lưới câu hỏi} (\textit{MCQ Map Search Rescue}). Chi tiết thuật toán, điều kiện kích hoạt, không gian tìm kiếm và hàm xếp hạng ứng viên được mô tả đầy đủ trong Mục~\ref{sec:mcq-rescue}. Bước này là cơ chế tự phục hồi tự động: nếu không tìm được ứng viên tốt hơn, kết quả baseline gốc được giữ nguyên để tránh sửa sai quá mức. Cơ chế này chỉ phát sinh chi phí tính toán thêm khi phiếu thực sự có vấn đề (sai lệch lưới vài pixel sau warp), không ảnh hưởng đến phiếu tốt nhờ điều kiện cổng kích hoạt.
+
+\paragraph{Bước 15. Tính điểm, lưu kết quả và sinh ảnh kiểm tra}
+
+Sau khi có MSSV, mã đề và danh sách đáp án, hệ thống chọn bộ đáp án tương ứng với mã đề rồi so sánh từng câu để tính điểm. Bên cạnh điểm số tổng, hệ thống tạo danh sách chi tiết gồm câu đúng, câu sai, câu bỏ trống hoặc câu không chắc chắn.
+
+Để người dùng có thể kiểm tra lại, backend sinh ảnh overlay hiển thị trực quan các vùng đã đọc, lưu crop vùng MSSV, crop vùng MCQ và file JSON confidence của từng bong bóng. Kết quả chấm được lưu vào bảng lịch sử omr\_grade\_result, còn các file ảnh lớn được lưu trong thư mục runtime và database chỉ lưu đường dẫn.
+
+Nhờ bước cuối này, hệ thống không chỉ trả về một con số điểm mà còn cung cấp bằng chứng trực quan cho quá trình chấm. Điều này giúp giáo viên dễ dàng kiểm tra các trường hợp phiếu bị tô mờ, tô nhiều đáp án hoặc nhận diện chưa chắc chắn.
+
+Tóm lại, pipeline xử lý ảnh OMR được thiết kế theo hướng tăng dần độ tin cậy của dữ liệu: đầu tiên chuẩn hóa ảnh, sau đó xác định vùng cần đọc, tiếp theo nhận diện từng thành phần của phiếu và cuối cùng kiểm tra, tính điểm, lưu bằng chứng. Nhờ vậy hệ thống có thể xử lý ảnh chụp bằng điện thoại trong điều kiện thực tế thay vì chỉ hoạt động tốt với ảnh quét thẳng và đủ sáng.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\textwidth]{figures/overlay_detail.png}
+  \caption{Ảnh phiếu sau khi pipeline hoàn tất: bong bóng đúng (xanh), sai (đỏ) đã được highlight}
+  \label{fig:overlay-detail}
+\end{figure}
+
+\section{Luồng chấm một phiếu}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{figures/seq_grade_single.jpg}
+  \caption{Biểu đồ trình tự luồng chấm một phiếu}
+  \label{fig:seq-grade-single}
+\end{figure}
+
+Biểu đồ trình tự mô tả tương tác giữa các thành phần trong luồng chấm đơn: giáo viên chọn hoặc chụp ảnh trên màn hình chấm bài, frontend gọi \texttt{POST /api/omr/grade}, backend đọc bài thi và đáp án từ PostgreSQL, chạy pipeline xử lý ảnh (\texttt{process\_omr\_exam}) trên luồng riêng và trả kết quả JSON kèm URL overlay để frontend hiển thị.
+
+Luồng chấm một phiếu bắt đầu từ thao tác của giáo viên trên màn hình chấm bài. Khi giáo viên chọn ảnh từ thư viện hoặc để Smart Camera Scanner tự chụp, frontend kiểm tra bài thi đang mở, mã đề đang chọn và bộ đáp án tương ứng. Sau đó frontend đóng gói file ảnh cùng các thông số bài thi (mã người dùng, mã bài thi, chuỗi đáp án, cấu hình phiếu) thành một request multipart và gửi lên \texttt{POST /api/omr/grade}.
+
+Backend nhận request, xác minh người dùng, đọc bài thi và đáp án từ database, xác định cấu hình phiếu (profile/template) và lưu ảnh vào thư mục runtime. Sau đó backend gọi \texttt{process\_omr\_exam()} - hàm điều phối toàn bộ pipeline 15 bước - trên một luồng riêng để không chặn server. Pipeline đọc ảnh, chuẩn hóa phối cảnh, nhị phân hóa, phát hiện marker, dựng ROI, giải mã MSSV, mã đề và đáp án MCQ. Nếu số câu không chắc chắn vượt ngưỡng, cơ chế MCQ Map Search Rescue thử các biến thể lưới để tìm kết quả tốt hơn baseline.
+
+Sau khi pipeline hoàn tất, backend so sánh đáp án giải mã được với bộ đáp án của mã đề, tính điểm, lưu ảnh overlay/crop/JSON confidence vào thư mục runtime và thêm bản ghi vào bảng lịch sử chấm. Kết quả JSON được trả về frontend để hiển thị điểm, MSSV, mã đề, ảnh overlay và bảng đúng/sai; danh sách bài thi được cập nhật để phản ánh lượt chấm mới nhất.
+
+\begin{longtable}{|L{2.7cm}|L{4.25cm}|L{3.5cm}|L{3.7cm}|}
+\caption{Luồng chấm một phiếu theo mã nguồn}
+\label{tab:luong-cham-mot-phieu}\\
+\hline
+\textbf{Bước} & \textbf{File/module liên quan} & \textbf{Dữ liệu vào} & \textbf{Dữ liệu ra} \\
+\hline
+Chọn/chụp ảnh & \path{MultichoicePage.tsx} & File ảnh hoặc camera frame & \texttt{FormData} \\
+\hline
+Gọi API & \path{fe/src/config/api.ts} & \texttt{FormData}, endpoint \texttt{GRADE} & HTTP multipart request \\
+\hline
+Nhận request & \path{grading.py} & file, uid, aid, answers, profile & File upload và tham số đã validate \\
+\hline
+Đọc nghiệp vụ & \path{shared.py}, \path{models/omr.py} & uid, aid & \path{omr_assignment}, \path{answer_sets}, profile \\
+\hline
+Xử lý ảnh & \path{omr_service.py} và các helper OMR & Đường dẫn ảnh và runtime config & \texttt{OMRResult} \\
+\hline
+Decode MCQ & \path{omr_mcq.py} & ROI MCQ, ảnh xám, ảnh nhị phân & Đáp án, confidence, uncertain \\
+\hline
+Decode MSSV/mã đề & \path{omr_numeric.py} & ROI số & \path{student_id}, \path{exam_code} \\
+\hline
+Lưu file trực quan & \path{omr_visualize.py}, \path{storage/uploads/omr} & Ảnh chuẩn và kết quả decode & Overlay, crop, confidence JSON \\
+\hline
+Lưu lịch sử & \path{shared.py}, \path{omr_grade_result} & \texttt{OMRResult}, metadata file & Bản ghi lịch sử chấm \\
+\hline
+Hiển thị & React component & JSON response & Điểm, overlay, bảng đáp án \\
+\hline
+\end{longtable}
+
+\section{Luồng chấm hàng loạt}
+
+Với chấm hàng loạt, người dùng chọn tối đa 50 ảnh trên màn hình chấm bài. Khi có nhiều hơn một ảnh được chọn, frontend gọi \texttt{POST /api/omr/grade-batch} thay vì endpoint chấm đơn và gửi tất cả file trong một request duy nhất. Backend kiểm tra số lượng file (từ chối nếu vượt 50), xác thực bài thi, đáp án và profile một lần rồi xử lý từng ảnh.
+
+Backend lặp tuần tự qua từng ảnh trong lô. Với mỗi ảnh, backend lưu file vào thư mục runtime (đặt tên theo timestamp để tránh xung đột) rồi chạy \texttt{process\_omr\_exam()} - cùng pipeline 15 bước như luồng chấm một phiếu. Ảnh chấm thành công được thêm vào bảng lịch sử và danh sách kết quả; ảnh lỗi được ghi nhận là thất bại kèm thông báo lỗi nhưng không dừng toàn bộ lô. Sau khi xử lý xong tất cả ảnh, nếu có overlay thành công, backend nén tất cả thành một file ZIP và trả URL tải về để frontend cung cấp cho giáo viên tải xuống trong một lần.
+
+\textbf{Luồng chấm hàng loạt có nhanh hơn chấm từng phiếu không?}
+
+Về thời gian xử lý ảnh, câu trả lời là \textit{không nhanh hơn trên mỗi phiếu}. Lý do là pipeline được gọi tuần tự (\texttt{for} loop), mỗi ảnh phải chờ ảnh trước xử lý xong mới bắt đầu; không có song song hóa xử lý ảnh ở tầng Python. Tuy nhiên, luồng hàng loạt \textit{nhanh hơn đáng kể về tổng thời gian thao tác} nhờ bốn lợi ích cộng gộp:
+
+\begin{itemize}[leftmargin=1.5cm]
+  \item \textbf{Giảm overhead HTTP:} N ảnh chỉ cần 1 lần thiết lập kết nối HTTPS và 1 request/response thay vì N request liên tiếp. Trên mạng LAN nội bộ, overhead mỗi request có thể tốn vài trăm millisecond.
+  \item \textbf{Resolve đáp án một lần:} Backend chỉ đọc bài thi, xác minh người dùng và đọc profile một lần duy nhất cho cả lô, thay vì lặp lại N lần database query.
+  \item \textbf{Cô lập lỗi từng ảnh:} Ảnh bị lỗi (không đọc được, không tìm thấy phiếu) chỉ ghi \texttt{success: false} vào kết quả tương ứng. Các ảnh còn lại trong lô vẫn được xử lý bình thường, giúp giáo viên biết chính xác ảnh nào thất bại mà không phải gửi lại toàn bộ.
+  \item \textbf{Tải file một lần:} Tất cả ảnh overlay được nén thành một file ZIP duy nhất. Giáo viên tải một lần thay vì tải từng ảnh riêng lẻ, tiết kiệm đáng kể thời gian ở bước xuất kết quả trực quan.
+\end{itemize}
+
+Để cải thiện tốc độ xử lý ảnh trong tương lai, hệ thống có thể nâng cấp bằng cách chạy nhiều worker Uvicorn song song hoặc chạy song song nhiều luồng xử lý ảnh. Hiện tại, kiến trúc tuần tự đủ đáp ứng nhu cầu thực tế vì mỗi phiếu chỉ tốn 1--3 giây và một lô chấm thông thường không vượt quá 30--50 phiếu.
+
+Bảng~\ref{tab:so-sanh-cham-don-lo} tóm tắt sự khác biệt kỹ thuật giữa hai luồng.
+
+\begin{longtable}{|L{3.5cm}|L{5.0cm}|L{5.0cm}|}
+\caption{So sánh luồng chấm một phiếu và hàng loạt}
+\label{tab:so-sanh-cham-don-lo}\\
+\hline
+\textbf{Tiêu chí} & \textbf{Chấm một phiếu} & \textbf{Chấm hàng loạt} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Tiêu chí} & \textbf{Chấm một phiếu} & \textbf{Chấm hàng loạt} \\
+\hline
+\endhead
+Endpoint & \path{POST /api/omr/grade} & \path{POST /api/omr/grade-batch} \\
+\hline
+Số HTTP request & 1 request / 1 ảnh & 1 request / N ảnh (N $\leq$ 50) \\
+\hline
+Resolve đáp án & Mỗi request đọc DB & Đọc DB một lần cho cả lô \\
+\hline
+Pipeline xử lý ảnh & Cùng \texttt{process\_omr\_exam()} & Cùng hàm, gọi tuần tự \\
+\hline
+Xử lý lỗi từng ảnh & Trả lỗi ngay & \texttt{success: false}, tiếp tục lô \\
+\hline
+Kết quả trả về & JSON một kết quả & Mảng \path{results} + \path{success_count} + \path{failed_count} \\
+\hline
+File overlay & URL ảnh đơn & URL ảnh đơn + \path{zip_url} cho cả lô \\
+\hline
+\end{longtable}
+
+\begin{longtable}{|L{4.0cm}|L{9.8cm}|}
+\caption{Trường kết quả chấm hàng loạt}
+\label{tab:batch-result-fields}\\
+\hline
+\textbf{Trường kết quả batch} & \textbf{Ý nghĩa} \\
+\hline
+\path{success_count} & Số ảnh chấm thành công. \\
+\hline
+\path{failed_count} & Số ảnh lỗi hoặc không decode được. \\
+\hline
+\texttt{answer\_source} & Nguồn đáp án backend dùng để so sánh. \\
+\hline
+\path{results} & Danh sách kết quả từng ảnh; phần tử thành công có điểm, MSSV, mã đề, URL overlay/crop và \path{grade_result_id}, phần tử lỗi có \texttt{success: false} và \texttt{error}. \\
+\hline
+\path{zip_url} & Đường dẫn file ZIP chứa overlay của các ảnh chấm thành công. \\
+\hline
+\end{longtable}
+
+\section{Đánh giá định lượng}
+
+Bộ dữ liệu kiểm thử gồm 61 ảnh chụp bằng điện thoại, chia thành bốn nhóm điều kiện: \textit{Clear\_answer} (ảnh tô rõ, không bóng đổ), \textit{Shadow} (có bóng đổ từ đèn huỳnh quang hoặc tay che), \textit{Tilted\_image} (phiếu nghiêng góc nhỏ) và \textit{Vague\_answer} (học sinh tô mờ). Hai ảnh trong nhóm \textit{Tilted\_image} chưa có đáp án đối chiếu nên bị loại khỏi eval. Cột \textbf{Acc. MCQ} = tỷ lệ câu nhận diện đúng đáp án trên tổng câu có đáp án đối chiếu. Cột \textbf{Uncertain} = số câu không chắc chắn trung bình mỗi phiếu.
+
+\begin{longtable}{|L{2.8cm}|L{1.4cm}|L{1.8cm}|L{2.5cm}|L{3.5cm}|}
+\caption{Kết quả kiểm thử định lượng theo nhóm điều kiện ảnh}
+\label{tab:dinh-luong}\\
+\hline
+\textbf{Nhóm} & \textbf{Số ảnh} & \textbf{Acc. MCQ} & \textbf{Uncertain/ phiếu} & \textbf{Điều kiện} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Nhóm} & \textbf{Số ảnh} & \textbf{Acc. MCQ} & \textbf{Uncertain/phiếu} & \textbf{Điều kiện} \\
+\hline
+\endhead
+Clear\_answer   & 17 & 99{,}4\% & 0{,}12 & Tô rõ, không bóng đổ \\
+\hline
+Shadow          & 30 & 99{,}5\% & 0{,}10 & Bóng đổ từ đèn hoặc tay cầm \\
+\hline
+Tilted\_image   & 10 & 100{,}0\% & 0{,}00 & Phiếu nghiêng góc nhỏ ($<15°$) \\
+\hline
+Vague\_answer   &  4 &  96{,}2\% & 0{,}75 & Bong bóng tô mờ ($<50\%$ diện tích) \\
+\hline
+\textbf{Tổng} & \textbf{61} & \textbf{99{,}3\%} & \textbf{0{,}13} & -- \\
+\hline
+\end{longtable}
+
+Trên toàn bộ 1.220 câu được đánh giá (61 phiếu, 20 câu/phiếu), kết quả phân tách thành ba thành phần: \textbf{99{,}3\%} câu hệ thống đưa ra kết quả đúng với đáp án đối chiếu (Acc.~MCQ), \textbf{0{,}7\%} câu không chắc chắn -- hệ thống nhận biết tín hiệu tô không rõ ràng và từ chối đưa ra kết quả thay vì đoán sai, và \textbf{0{,}1\%} câu nhận diện sai nhãn -- hệ thống đưa ra đáp án A/B/C/D nhưng sai (1 câu trong toàn bộ bộ dữ liệu). Tỷ lệ nhận diện sai nhãn gần bằng 0 cho thấy hệ thống hoặc đọc đúng hoặc biết từ chối, không tự tin đưa ra kết quả sai.
+

@@ -43,13 +43,6 @@ export type RoiRect = {
   h: number;
 };
 
-export type RoiQuad = {
-  tl: { x: number; y: number };
-  tr: { x: number; y: number };
-  br: { x: number; y: number };
-  bl: { x: number; y: number };
-};
-
 export type HandwritingFieldsStrategy = {
   enabled?: boolean;
   save_crops?: boolean;
@@ -69,7 +62,6 @@ export type McqDecodeStrategy = {
 
 export type ScannerStrategy = {
   sheet_aspect_ratio?: number;
-  crop_quad?: RoiQuad | null;
   sid_roi?: RoiRect | null;
   mcq_roi?: RoiRect | null;
   exam_code_roi?: RoiRect | null;

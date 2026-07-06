@@ -1,0 +1,69 @@
+\chapter{KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN}
+
+\section{Kết luận}
+
+Đồ án đã hoàn thành xây dựng hệ thống web chấm điểm phiếu trắc nghiệm tự động với đầy đủ các chức năng đề ra ban đầu.
+
+\subsection{Kết quả kỹ thuật}
+
+\begin{itemize}
+    \item Pipeline xử lý ảnh 15 bước hoạt động ổn định với ảnh chụp điện thoại trong nhiều điều kiện ánh sáng và góc chụp khác nhau.
+    \item Cơ chế MCQ Map Search Rescue tự động hiệu chỉnh lưới câu hỏi khi phát hiện nhiều bong bóng không rõ ràng.
+    \item Smart Camera Scanner phát hiện phiếu theo thời gian thực và tự động chụp mà không cần thao tác của người dùng.
+    \item Module crop vùng chữ viết tay đã hỗ trợ ROI \texttt{ho\_ten} theo profile và sẵn sàng để thu thập dữ liệu, tích hợp OCR/học sâu ở phiên bản sau.
+    \item Dữ liệu lịch sử chấm đã được tách sang bảng \path{omr_grade_result}, giúp quản lý nhiều lượt chấm ổn định hơn so với chỉ lưu trong \path{last_result}.
+\end{itemize}
+
+\subsection{Tính thực tiễn}
+
+\begin{itemize}
+    \item Không yêu cầu phần cứng đặc biệt, giáo viên chỉ cần sử dụng điện thoại thông minh và kết nối mạng LAN.
+    \item Giao diện được thiết kế theo hướng \textit{mobile-first}, dễ sử dụng trên thiết bị di động và hỗ trợ đầy đủ tiếng Việt.
+    \item Hệ thống hỗ trợ xuất dữ liệu ra file Excel và PDF, giúp dễ dàng tích hợp với quy trình quản lý điểm hiện có.
+\end{itemize}
+
+Các test case chức năng chính được thiết kế đều đạt kết quả như kỳ vọng trong môi trường kiểm thử.
+
+\section{Hướng phát triển}
+
+Mặc dù hệ thống đã hoàn thành các chức năng chính, vẫn còn nhiều hướng có thể tiếp tục nghiên cứu và phát triển nhằm nâng cao độ chính xác, hiệu năng, bảo mật và trải nghiệm người dùng.
+
+\subsection{Cải thiện độ chính xác nhận diện}
+
+\begin{itemize}
+    \item Thu thập bộ dữ liệu phiếu thực tế và ảnh crop chữ viết tay để huấn luyện hoặc tích hợp mô hình OCR/học sâu ở các phiên bản sau.
+    \item Nghiên cứu áp dụng mô hình \textit{Vision Transformer}~\cite{vit} (ViT) cho bài toán phân loại bong bóng.
+    \item Bổ sung xử lý với phiếu bị gấp hoặc nhàu.
+\end{itemize}
+
+\subsection{Cải thiện hiệu năng}
+
+\begin{itemize}
+    \item Xử lý batch song song thay vì tuần tự bằng \texttt{asyncio.gather} hoặc Celery task queue, giảm thời gian chờ khi tải lên nhiều ảnh.
+    \item Cache Form Profile trong memory hoặc Redis, đồng thời invalidate cache khi dev/editor lưu profile mới.
+    \item Tách xử lý batch dài sang hàng đợi SQS/Celery worker khi triển khai cloud để tránh hết thời gian chờ HTTP.
+\end{itemize}
+
+\subsection{Tăng cường bảo mật}
+
+\begin{itemize}
+    \item Tích hợp JWT (\textit{JSON Web Token}) với refresh token để xác thực không lưu trong \texttt{localStorage}.
+    \item Thêm rate limiting cho API endpoint chấm điểm để ngăn lạm dụng.
+    \item Hash mật khẩu bằng bcrypt/argon2 và lưu secret trong AWS Secrets Manager hoặc Parameter Store khi triển khai production.
+\end{itemize}
+
+\subsection{Mở rộng tính năng}
+
+\begin{itemize}
+    \item Triển khai production trên AWS với S3 + CloudFront cho frontend/static file, RDS PostgreSQL cho database và ECS/Fargate hoặc EC2 cho backend FastAPI.
+    \item Chuyển runtime file từ \path{storage/uploads} cục bộ sang S3, đồng thời giữ SQL làm nguồn sự thật cho metadata và kết quả nghiệp vụ.
+    \item Bổ sung tính năng so sánh kết quả giữa nhiều bài thi, thống kê theo lớp học và hiển thị biểu đồ phân phối điểm.
+    \item Xây dựng ứng dụng di động gốc bằng React Native hoặc Flutter nhằm tối ưu hơn trải nghiệm sử dụng camera trên thiết bị di động.
+    \item Hỗ trợ tích hợp API với các hệ thống quản lý học tập LMS như Moodle.
+\end{itemize}
+
+\subsection{Hỗ trợ offline}
+
+\begin{itemize}
+    \item Sử dụng \textit{Service Worker} và \textit{IndexedDB} để cho phép chụp ảnh và lưu cục bộ khi mất mạng, đồng bộ kết quả khi có kết nối trở lại.
+\end{itemize}

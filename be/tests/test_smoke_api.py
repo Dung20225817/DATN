@@ -45,7 +45,6 @@ class ApiSmokeTests(unittest.TestCase):
             "/api/omr/assignments/{uid}/{aid}",
             "/api/omr/grade",
             "/api/omr/grade-batch",
-            "/api/omr/suggest-crop",
         }
         self.assertTrue(expected_paths.issubset(paths))
 

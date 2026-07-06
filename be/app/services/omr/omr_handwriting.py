@@ -8,7 +8,6 @@ import numpy as np
 
 from .omr_utils import _clip_rect
 
-HANDWRITING_FIELDS = ["ho_ten"]
 _HANDWRITING_ROI_KEYS = ["ho_ten"]
 _LEGACY_HO_TEN_KEYS = ["ho_ten_1", "ho_ten_2"]
 
