@@ -31,61 +31,51 @@ def _clip_rect_local(x: int, y: int, w: int, h: int, max_w: int, max_h: int) -> 
     return int(x), int(y), int(w), int(h)
 
 
-def _pick_anchor_template(search_gray: np.ndarray) -> Optional[np.ndarray]:
-    if search_gray is None or search_gray.size == 0:
-        return None
+def _pick_anchor_template_from_markers(
+    markers: Sequence[Dict[str, object]],
+    gray_img: np.ndarray,
+    search_x1: int,
+    search_y1: int,
+    search_w: int,
+    top_h: int,
+) -> Optional[np.ndarray]:
+    """Pick a fiducial-quality marker already detected upstream and crop it as the
+    matchTemplate seed, instead of re-running contour detection from scratch."""
+    img_h, img_w = gray_img.shape[:2]
+    band_x2 = float(search_x1 + search_w)
+    band_y2 = float(search_y1 + top_h)
 
-    h, w = search_gray.shape[:2]
-    if h < 20 or w < 20:
-        return None
-
-    top_h = max(40, min(h, int(round(0.58 * h))))
-    top_band = search_gray[:top_h, :]
-    blur = cv2.GaussianBlur(top_band, (3, 3), 0)
-    _, band_inv = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    band_inv = cv2.morphologyEx(band_inv, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
-
-    contours, _ = cv2.findContours(band_inv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return None
-
-    min_area = max(24, int(round(0.00012 * float(w * top_h))))
-    max_area = max(min_area + 1, int(round(0.0060 * float(w * top_h))))
     best = None
     best_score = -1e9
-
-    for cnt in contours:
-        x, y, bw, bh = cv2.boundingRect(cnt)
-        area = float(bw * bh)
-        if area < min_area or area > max_area:
+    for marker in list(markers or []):
+        cx = _safe_float(marker.get("cx"), -1.0)
+        cy = _safe_float(marker.get("cy"), -1.0)
+        if cx < float(search_x1) or cx > band_x2 or cy < float(search_y1) or cy > band_y2:
             continue
 
-        aspect = float(bw) / max(1.0, float(bh))
-        if not (0.60 <= aspect <= 1.45):
+        fill = _safe_float(marker.get("fill"), 0.0)
+        size = _safe_float(marker.get("size"), 0.0)
+        circularity = _safe_float(marker.get("circularity"), 1.0)
+        if fill < 0.86 or size < 11.0 or circularity > 0.90:
             continue
 
-        contour_area = float(cv2.contourArea(cnt))
-        fill_ratio = contour_area / max(1.0, area)
-        if fill_ratio < 0.50:
-            continue
-
-        x_center_norm = (float(x) + 0.5 * float(bw)) / max(1.0, float(w))
-        y_norm = (float(y) + 0.5 * float(bh)) / max(1.0, float(top_h))
-        square_size = min(float(bw), float(bh)) / max(1.0, float(min(w, top_h)))
+        x_center_norm = (cx - float(search_x1)) / max(1.0, float(search_w))
         center_bias = 1.0 - abs(x_center_norm - 0.5)
-
-        score = (2.0 * fill_ratio) + (1.1 * square_size) + (0.45 * center_bias) - (0.38 * y_norm)
+        score = (2.0 * fill) + (0.45 * center_bias)
         if score > best_score:
             best_score = score
-            best = (x, y, bw, bh)
+            best = marker
 
     if best is None:
         return None
 
-    bx, by, bw, bh = best
+    bx = _safe_int(best.get("x"), 0)
+    by = _safe_int(best.get("y"), 0)
+    bw = max(1, _safe_int(best.get("w"), 0))
+    bh = max(1, _safe_int(best.get("h"), 0))
     pad = max(2, int(round(0.22 * float(max(bw, bh)))))
-    x1, y1, tw, th = _clip_rect_local(bx - pad, by - pad, bw + (2 * pad), bh + (2 * pad), w, top_h)
-    template = top_band[y1 : y1 + th, x1 : x1 + tw]
+    x1, y1, tw, th = _clip_rect_local(bx - pad, by - pad, bw + (2 * pad), bh + (2 * pad), img_w, img_h)
+    template = gray_img[y1 : y1 + th, x1 : x1 + tw]
     if template.size == 0:
         return None
 
@@ -190,6 +180,8 @@ def refine_mcq_roi(
     source_img: np.ndarray,
     gray_img: np.ndarray,
     mcq_roi: Dict[str, int],
+    markers: Optional[Sequence[Dict[str, object]]] = None,
+    rows_per_block: Optional[int] = None,
     top_padding_px: int = 5,
     side_padding_px: int = 10,
     bottom_padding_px: int = 15,
@@ -234,7 +226,8 @@ def refine_mcq_roi(
         meta["reason"] = "empty-search-window"
         return base_roi, base_crop, meta
 
-    template = _pick_anchor_template(search_gray)
+    top_h = max(40, int(round(0.58 * float(sh))))
+    template = _pick_anchor_template_from_markers(markers, gray_img, sx1, sy1, sw, top_h)
     if template is None:
         meta["reason"] = "template-not-found"
         return base_roi, base_crop, meta
@@ -255,7 +248,7 @@ def refine_mcq_roi(
     blur = cv2.GaussianBlur(search_gray, (3, 3), 0)
     _, search_inv = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    min_dist = max(6.0, 0.65 * float(max(1, min(th, tw))))
+    min_dist = max(6.0, 0.65 * float(min(th, tw)))
     for threshold in threshold_levels:
         ys, xs = np.where(result >= float(threshold))
         if len(xs) <= 0:
@@ -384,8 +377,11 @@ def refine_mcq_roi(
         meta["reason"] = "invalid-anchor-order"
         return base_roi, base_crop, meta
 
-    # Grid projection from marker rows: 16 intervals between top and bottom marker rows.
-    line_h = (y_anchor_bottom - y_anchor_top) / 16.0
+    # Grid projection from marker rows: divide the fiducial span by the configured
+    # rows_per_block (same convention as build_mcq_roi_from_black_markers's long-form
+    # line_h_from_span), falling back to a fixed 16 only if rows_per_block is unknown.
+    divisor = max(10.0, float(rows_per_block)) if rows_per_block else 16.0
+    line_h = (y_anchor_bottom - y_anchor_top) / divisor
     if not (6.0 <= line_h <= 72.0):
         meta["reason"] = "line-height-out-of-range"
         return base_roi, base_crop, meta
@@ -605,7 +601,7 @@ def _infer_mcq_geometry_from_markers(
         out["fid_bottom_y"] = float(fid_bottom.get("cy", 0.0))
 
         # For left/right x: use median of rows that have the full complement of fid markers
-        expected_count = int(out.get("block_count", len(fid_top_xs)))
+        expected_count = int(out.get("block_count", len(fid_top_xs))) # len(fid_top_xs) là giá trị dự phòng
         full_rows = [r for r in fid_rows if int(r.get("count", 0)) >= expected_count]
         if not full_rows:
             full_rows = fid_rows
@@ -620,7 +616,7 @@ def _infer_mcq_geometry_from_markers(
         fid_rx = float(out["fid_right_x"])
         if n_fid >= 2 and fid_rx > fid_lx:
             fid_block_w = (fid_rx - fid_lx) / float(n_fid - 1)
-            out["fid_block_right_x"] = float(fid_rx + fid_block_w)
+            out["fid_block_right_x"] = float(fid_rx + fid_block_w) # mấy khối này tính toán dựa trên các marker fid nên chưa thể bo gọn được
             out["fid_block_width"] = float(fid_block_w)
         else:
             out["fid_block_right_x"] = fid_rx
@@ -660,15 +656,13 @@ def _infer_mcq_geometry_from_markers(
                     ]
                 for x in row_xs:
                     key = int(round(float(x) / bucket_w))
-                    bucket = x_buckets.get(key)
+                    bucket = x_buckets.get(key) # bucket là các cột bong bóng có giá trị x gần nhau
                     if bucket is None:
                         x_buckets[key] = {"sum": float(x), "count": 1, "rows": {int(ridx)}}
                     else:
                         bucket["sum"] = float(bucket["sum"]) + float(x)
                         bucket["count"] = int(bucket["count"]) + 1
-                        rows = set(bucket.get("rows") or set())
-                        rows.add(int(ridx))
-                        bucket["rows"] = rows
+                        bucket["rows"].add(int(ridx))
 
             min_row_hits = max(2, int(math.ceil(len(band_rows) * 0.5)))
             merged_xs = []
@@ -695,7 +689,7 @@ def _infer_mcq_geometry_from_markers(
                     if current:
                         groups.append(current)
 
-                    band_groups = [grp for grp in groups if len(grp) >= 3]
+                    band_groups = [grp for grp in groups if len(grp) >= 3] # danh sách các tọa độ x các cột bong bóng được phân theo từng khối
 
         if 2 <= len(band_groups) <= 6:
             out["block_bands"] = [
@@ -704,7 +698,7 @@ def _infer_mcq_geometry_from_markers(
                     "x_max": float(max(grp)),
                 }
                 for grp in band_groups
-            ]
+            ] #block_bands là danh sách các khoảng X (mỗi khối 1 khoảng, gồm 2 số x_min/x_max)
             if "block_count" not in out or len(band_groups) >= int(_safe_int(out.get("block_count"), 0)):
                 out["block_count"] = float(len(band_groups))
 
@@ -1287,7 +1281,6 @@ def _decode_mcq_with_map(
     thin_noise_erode_iter = int(decode_cfg.get("thin_noise_erode_iter", 1))
     thin_noise_kernel = int(decode_cfg.get("thin_noise_kernel", 2))
     thin_noise_min_component_ratio = float(decode_cfg.get("thin_noise_min_component_ratio", 0.012))
-    density_only_scoring = bool(decode_cfg.get("density_only_scoring", False))
 
     row_offsets_px = list(decode_cfg["row_offsets_px"])
 
@@ -1417,7 +1410,6 @@ def _decode_mcq_with_map(
             cand_y1 = max(float(y), min(float(y + h - y_span), cand_y1))
             cand_y2 = float(cand_y1 + y_span)
 
-            choice_scores: List[float] = []
             density_scores: List[float] = []
             center_density_scores: List[float] = []
             dark_p20_scores: List[float] = []
@@ -1431,7 +1423,6 @@ def _decode_mcq_with_map(
                 cx2 = min(x + w, cx2)
 
                 if cx2 <= cx1 or cand_y2 <= cand_y1:
-                    choice_scores.append(0.0)
                     density_scores.append(0.0)
                     center_density_scores.append(0.0)
                     dark_p20_scores.append(0.0)
@@ -1460,14 +1451,11 @@ def _decode_mcq_with_map(
 
                 density = _cell_density(cell_bin)
                 center_density = _cell_density(center_bin)
-                darkness = _cell_score(cell_gray, cell_bin)
                 dark_p20 = _cell_dark_percentile(cell_gray, percentile=20.0)
-                score = float(density if density_only_scoring else 0.90 * density + 0.10 * darkness)
 
                 density_scores.append(float(density))
                 center_density_scores.append(float(center_density))
                 dark_p20_scores.append(float(dark_p20))
-                choice_scores.append(float(score))
 
                 cell_boxes.append([int(round(cx1)), int(round(cand_y1)), int(round(cx2)), int(round(cand_y2))])
                 centroid_x, centroid_y = _compute_cell_mark_centroid(binary_inv, cx1, cand_y1, cx2, cand_y2, core_ratio=0.72)
@@ -1489,7 +1477,6 @@ def _decode_mcq_with_map(
                 "y_shift": float(cand_y1 - y1),
                 "band_left": float(cand_left),
                 "band_right": float(cand_right),
-                "choice_scores": choice_scores,
                 "density_scores": density_scores,
                 "center_density_scores": center_density_scores,
                 "dark_p20_scores": dark_p20_scores,
@@ -1519,7 +1506,6 @@ def _decode_mcq_with_map(
         row_x_shift_used = float(best_candidate.get("x_shift", 0.0))
         row_y_shift_used = float(best_candidate.get("y_shift", 0.0))
 
-        choice_scores = list(best_candidate.get("choice_scores") or [])
         density_scores = list(best_candidate.get("density_scores") or [])
         center_density_scores = list(best_candidate.get("center_density_scores") or [])
         dark_p20_scores = list(best_candidate.get("dark_p20_scores") or [])
@@ -1708,51 +1694,6 @@ def _decode_mcq_with_map(
         "right_x": float(right_x),
         "top_center_y": float(top_center_y),
     }
-
-
-def _detect_q5_start_drift(mcq_result, min_mark_score: float) -> bool:
-    rows = list(mcq_result.get("rows") or [])
-    if len(rows) < 5:
-        return False
-
-    first_count = min(4, max(1, len(rows) - 1))
-    next_count = min(4, len(rows) - first_count)
-    first_rows = rows[:first_count]
-    next_rows = rows[first_count : first_count + next_count]
-
-    weak_first = 0
-    for row in first_rows:
-        if int(row.get("selected", -1)) < 0 or _safe_float(row.get("best_score"), 0.0) < float(min_mark_score):
-            weak_first += 1
-
-    strong_next = 0
-    for row in next_rows:
-        if int(row.get("selected", -1)) >= 0 and _safe_float(row.get("best_score"), 0.0) >= float(min_mark_score):
-            strong_next += 1
-
-    first_selected = [int(row.get("selected", -1)) for row in first_rows]
-    first_margins = [_safe_float(row.get("margin"), 0.0) for row in first_rows]
-    left_bias = sum(1 for sel in first_selected if sel == 0) >= 3
-    weak_margin = (float(np.mean(first_margins)) if first_margins else 0.0) < 0.035
-    next_confident = sum(1 for row in next_rows if int(row.get("selected", -1)) >= 0) >= 2
-
-    if left_bias and weak_margin and next_confident:
-        return True
-
-    if next_rows:
-        next_margins = [_safe_float(row.get("margin"), 0.0) for row in next_rows]
-        next_margin_mean = float(np.mean(next_margins)) if next_margins else 0.0
-    else:
-        next_margin_mean = 0.0
-
-    first_non_uncertain = [sel for sel in first_selected if sel >= 0]
-    first_unique = len(set(first_non_uncertain)) if first_non_uncertain else 0
-    low_diversity = first_unique <= 1 and len(first_non_uncertain) >= 2
-
-    if len(rows) < 8:
-        return bool((weak_first >= max(2, first_count - 1)) and low_diversity and (next_margin_mean > 0.010))
-
-    return bool(weak_first >= 3 and strong_next >= 3)
 
 
 def _mcq_quality(mcq_result) -> float:

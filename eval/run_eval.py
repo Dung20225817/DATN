@@ -59,7 +59,7 @@ def load_golden(image_path: Path) -> dict | None:
         return json.load(f)
 
 
-def grade_image(api_url: str, image_path: Path, golden: dict, no_rescue: bool = False, density_only: bool = False) -> dict | None:
+def grade_image(api_url: str, image_path: Path, golden: dict, no_rescue: bool = False) -> dict | None:
     """Gửi ảnh lên API và lấy kết quả. Trả về None nếu lỗi."""
     import tempfile
 
@@ -100,8 +100,6 @@ def grade_image(api_url: str, image_path: Path, golden: dict, no_rescue: bool = 
                     }
                     if no_rescue:
                         data["disable_mcq_rescue"] = "true"
-                    if density_only:
-                        data["density_only_scoring"] = "true"
                     resp = requests.post(
                         f"{api_url}/api/omr/grade",
                         files=files,
@@ -122,8 +120,6 @@ def grade_image(api_url: str, image_path: Path, golden: dict, no_rescue: bool = 
             }
             if no_rescue:
                 data["disable_mcq_rescue"] = "true"
-            if density_only:
-                data["density_only_scoring"] = "true"
             resp = requests.post(
                 f"{api_url}/api/omr/grade",
                 files=files,
@@ -415,8 +411,6 @@ def main():
                         help="Chỉ liệt kê ảnh, không gọi API")
     parser.add_argument("--no-rescue", action="store_true",
                         help="Tắt MCQ Map Search Rescue (ablation)")
-    parser.add_argument("--density-only", action="store_true",
-                        help="Chỉ dùng density score, bỏ darkness (ablation)")
     args = parser.parse_args()
 
     dataset_dir = Path(args.dataset_dir)
@@ -428,8 +422,6 @@ def main():
     print(f"Filter:  category={args.category}")
     if args.no_rescue:
         print(f"Mode:    --no-rescue (MCQ Map Search Rescue DISABLED)")
-    if args.density_only:
-        print(f"Mode:    --density-only (darkness bỏ qua, chỉ dùng density score)")
     print()
 
     manifest = load_manifest(dataset_dir)
@@ -488,7 +480,7 @@ def main():
         print(f"  [{i}/{len(images_with_key)}] {entry['category']}/{image_path.name}", end=" ", flush=True)
         t0 = time.time()
 
-        api_resp = grade_image(args.api_url, image_path, golden, no_rescue=args.no_rescue, density_only=args.density_only)
+        api_resp = grade_image(args.api_url, image_path, golden, no_rescue=args.no_rescue)
         elapsed = time.time() - t0
 
         img_result = compare_result(api_resp, golden)

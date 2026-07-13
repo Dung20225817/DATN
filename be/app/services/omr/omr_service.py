@@ -23,7 +23,6 @@ from .omr_layout import _build_rois_from_anchors, _parse_roi_cfg, _resolve_coord
 from .omr_labels import choice_label
 from .omr_mcq import (
     _decode_mcq_with_map,
-    _detect_q5_start_drift,
     _infer_mcq_geometry_from_markers,
     _mcq_quality,
     _parse_mcq_decode_config,
@@ -208,6 +207,35 @@ def _validate_mcq_block_bands(
         }
     )
     return normalized, meta
+
+
+def _pick_mcq_x_span(
+    geom_left_x: float,
+    geom_right_x: float,
+    fid_left_x: float,
+    fid_right_x: float,
+    roi_w: float,
+    geom_ratio: float,
+    geom_floor: float,
+    fid_ratio: float,
+    fid_floor: float,
+    source_geom: str,
+    source_fid: str,
+    apply_fid_nudge: bool = False,
+    width_img: float = 0.0,
+) -> Optional[Tuple[float, float, str]]:
+    if geom_right_x - geom_left_x >= max(geom_floor, roi_w * geom_ratio):
+        left_x = float(geom_left_x)
+        right_x = float(geom_right_x)
+        if apply_fid_nudge:
+            if fid_left_x > 0.0 and fid_left_x < left_x and (left_x - fid_left_x) <= max(80.0, 0.12 * float(width_img)):
+                left_x = float(fid_left_x)
+            if fid_right_x > right_x and (fid_right_x - right_x) <= max(35.0, 0.04 * float(width_img)):
+                right_x = float(fid_right_x)
+        return left_x, right_x, source_geom
+    if fid_right_x - fid_left_x >= max(fid_floor, roi_w * fid_ratio):
+        return float(fid_left_x), float(fid_right_x), source_fid
+    return None
 
 
 def _derive_mcq_center_bands_from_span(
@@ -831,7 +859,7 @@ def generate_omr_template(
                 cv2.putText(
                     img,
                     f"{field_name}:",
-                    (info_x + 8, y1 + max(18, min(28, row_h - 6))),
+                    (info_x + 8, y1 + min(28, row_h - 6)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.58,
                     (35, 35, 35),
@@ -955,13 +983,9 @@ def process_omr_exam(
     sid_has_write_row=False,
     profile_sid_roi=None,
     profile_sid_roi_lock=False,
-    profile_mcq_roi=None,
-    profile_exam_code_roi=None,
     profile_sid_row_offsets=None,
     profile_disable_mcq_rescue=False,
-    density_only_scoring=False,
     profile_mcq_decode=None,
-    profile_threshold_mode=None,
     profile_corner_markers=None,
     profile_scanner_hint=None,
     profile_page_size_pt=None,
@@ -1009,11 +1033,9 @@ def process_omr_exam(
             warning_codes.append("COORD_GLOBAL_WARP_FALLBACK")
 
         gray = cv2.cvtColor(img_std, cv2.COLOR_BGR2GRAY)
-        gray_norm, binary_inv, threshold_meta = _binarize(gray, profile_threshold_mode)
+        gray_norm, binary_inv, threshold_meta = _binarize(gray)
 
         sid_roi_cfg = _parse_roi_cfg(profile_sid_roi, WIDTH_IMG, HEIGHT_IMG)
-        code_roi_cfg = _parse_roi_cfg(profile_exam_code_roi, WIDTH_IMG, HEIGHT_IMG)
-        mcq_roi_cfg = _parse_roi_cfg(profile_mcq_roi, WIDTH_IMG, HEIGHT_IMG)
 
         markers = omr_marker_utils._extract_black_square_markers_from_gray(
             gray_norm,
@@ -1069,8 +1091,6 @@ def process_omr_exam(
             markers,
             rows_per_block,
             sid_roi_cfg,
-            code_roi_cfg,
-            mcq_roi_cfg,
             block_count_hint=block_count,
         )
 
@@ -1084,8 +1104,6 @@ def process_omr_exam(
             HEIGHT_IMG,
             rows_per_block,
             sid_roi_cfg,
-            code_roi_cfg,
-            mcq_roi_cfg,
             block_count_hint=block_count,
         )
 
@@ -1098,7 +1116,7 @@ def process_omr_exam(
             warnings.append("Tu dong thu hep ROI SID vao ben trong anchor tren/duoi va hai canh ben.")
 
         mcq_block_bands_raw: List[Tuple[float, float]] = []
-        if isinstance(geom_bands, (list, tuple)):
+        if isinstance(geom_bands, (list, tuple)): #danh sách các khoảng biên X — mỗi khối 1 dict {"x_min", "x_max"}
             for item in list(geom_bands):
                 if not isinstance(item, dict):
                     continue
@@ -1106,8 +1124,8 @@ def process_omr_exam(
                 x2 = _safe_float(item.get("x_max"), -1.0)
                 if x2 <= x1:
                     continue
-                mcq_block_bands_raw.append((float(x1), float(x2)))
-        mcq_block_bands: List[Tuple[float, float]] = list(mcq_block_bands_raw)
+                mcq_block_bands_raw.append((float(x1), float(x2))) 
+        mcq_block_bands: List[Tuple[float, float]] = mcq_block_bands_raw
         mcq_block_bands, mcq_block_bands_meta = _validate_mcq_block_bands(
             mcq_block_bands,
             mcq_roi,
@@ -1119,33 +1137,30 @@ def process_omr_exam(
         mcq_block_bands_initial_meta = dict(mcq_block_bands_meta)
         mcq_block_bands_revalidated_after_roi = False
 
-        geom_top_center = _safe_float(mcq_geometry.get("top_center_y"), -1.0)
-        geom_line_h = _safe_float(mcq_geometry.get("line_h"), -1.0)
         mcq_marker_roi_meta: Dict[str, object] = {"used": False, "reason": "skipped"}
-        if mcq_roi_cfg is None:
-            marker_roi, mcq_marker_roi_meta = build_mcq_roi_from_black_markers(
-                mcq_roi=mcq_roi,
-                mcq_geometry=mcq_geometry,
-                img_w=WIDTH_IMG,
-                img_h=HEIGHT_IMG,
-                top_padding_px=5,
-                side_padding_px=10,
-                bottom_padding_px=15,
-            )
-            if bool(mcq_marker_roi_meta.get("used", False)):
-                if long_form_mode and _reject_long_form_low_mcq_top(mcq_marker_roi_meta, HEIGHT_IMG):
-                    mcq_marker_roi_meta = {
-                        **mcq_marker_roi_meta,
-                        "used": False,
-                        "rejected": True,
-                        "reason": "long-form-top-fid-too-low",
-                    }
-                    warnings.append("Long-form: bo qua ROI MCQ theo marker do top fiducial thap bat thuong.")
-                    warning_codes.append("MCQ_LONG_FORM_TOP_FID_REJECTED")
-                else:
-                    mcq_roi = dict(marker_roi)
-                    warnings.append("Da dat ROI MCQ theo cac o vuong den cua khung MCQ.")
-                    warning_codes.append("MCQ_BLACK_MARKER_ROI_APPLIED")
+        marker_roi, mcq_marker_roi_meta = build_mcq_roi_from_black_markers(
+            mcq_roi=mcq_roi,
+            mcq_geometry=mcq_geometry,
+            img_w=WIDTH_IMG,
+            img_h=HEIGHT_IMG,
+            top_padding_px=5,
+            side_padding_px=10,
+            bottom_padding_px=15,
+        )
+        if bool(mcq_marker_roi_meta.get("used", False)):
+            if long_form_mode and _reject_long_form_low_mcq_top(mcq_marker_roi_meta, HEIGHT_IMG):
+                mcq_marker_roi_meta = {
+                    **mcq_marker_roi_meta,
+                    "used": False,
+                    "rejected": True,
+                    "reason": "long-form-top-fid-too-low",
+                }
+                warnings.append("Long-form: bo qua ROI MCQ theo marker do top fiducial thap bat thuong.")
+                warning_codes.append("MCQ_LONG_FORM_TOP_FID_REJECTED")
+            else:
+                mcq_roi = dict(marker_roi)
+                warnings.append("Da dat ROI MCQ theo cac o vuong den cua khung MCQ.")
+                warning_codes.append("MCQ_BLACK_MARKER_ROI_APPLIED")
 
         mcq_refine_meta: Dict[str, object] = {"used": False, "reason": "skipped"}
         mcq_anchor_height_meta: Dict[str, object] = {"used": False, "reason": "derived-from-mcq-refine"}
@@ -1153,66 +1168,66 @@ def process_omr_exam(
             mcq_roi["y"] : mcq_roi["y"] + mcq_roi["h"],
             mcq_roi["x"] : mcq_roi["x"] + mcq_roi["w"],
         ]
-        if mcq_roi_cfg is None:
-            mcq_roi, mcq_crop_clean, mcq_refine_meta = refine_mcq_roi(
-                source_img=img_std,
-                gray_img=gray_norm,
-                mcq_roi=mcq_roi,
-                top_padding_px=5,
-                side_padding_px=10,
-                bottom_padding_px=15,
-            )
+        mcq_roi, mcq_crop_clean, mcq_refine_meta = refine_mcq_roi(
+            source_img=img_std,
+            gray_img=gray_norm,
+            mcq_roi=mcq_roi,
+            markers=markers,
+            rows_per_block=rows_per_block,
+            top_padding_px=5,
+            side_padding_px=10,
+            bottom_padding_px=15,
+        )
 
-            if bool(mcq_refine_meta.get("used", False)):
-                warnings.append("Da refine ROI MCQ bang template matching anchor de loai bo vung chu huong dan.")
-                warning_codes.append("MCQ_TEMPLATE_REFINE_APPLIED")
+        if bool(mcq_refine_meta.get("used", False)):
+            warnings.append("Da refine ROI MCQ bang template matching anchor de loai bo vung chu huong dan.")
+            warning_codes.append("MCQ_TEMPLATE_REFINE_APPLIED")
 
-                refined_top = _safe_float(mcq_refine_meta.get("y_anchor_top"), -1.0)
-                refined_bottom = _safe_float(mcq_refine_meta.get("y_anchor_bottom"), -1.0)
-                refined_line_h = _safe_float(mcq_refine_meta.get("line_h"), -1.0)
-                if refined_top > 0.0 and refined_bottom > refined_top:
-                    mcq_geometry["top_center_y"] = float(refined_top)
-                    mcq_geometry["bottom_center_y"] = float(refined_bottom)
-                if refined_line_h > 0.0:
-                    roi_line_h_hint = float(mcq_roi["h"]) / max(2.0, float(rows_per_block))
-                    min_line_h = 0.60 * float(roi_line_h_hint)
-                    max_line_h = 1.35 * float(roi_line_h_hint)
-                    if min_line_h <= refined_line_h <= max_line_h:
-                        mcq_geometry["line_h"] = float(refined_line_h)
-                    else:
-                        warning_codes.append("MCQ_REFINE_LINEH_REJECTED")
-                        warnings.append("Bo qua line-height tu refine ROI MCQ do vuot nguong hop le.")
-                anchor_distance = float(refined_bottom - refined_top)
-                mcq_anchor_height_meta = {
-                    "used": bool(anchor_distance > 0.0),
-                    "reason": "derived-from-refine-mcq-roi",
-                    "y_top_anchor": round(float(refined_top), 4),
-                    "y_bottom_anchor": round(float(refined_bottom), 4),
-                    "anchor_distance": round(float(anchor_distance), 4),
-                    "line_h": round(float(refined_line_h), 4) if refined_line_h > 0.0 else None,
-                    "match_count": _safe_int(mcq_refine_meta.get("matches"), 0),
-                    "top_markers": list(mcq_refine_meta.get("top_row_centers") or []),
-                    "bottom_markers": list(mcq_refine_meta.get("bottom_row_centers") or []),
-                    "refined_roi": dict(mcq_roi),
-                }
-            else:
-                mcq_anchor_height_meta = {
-                    "used": False,
-                    "reason": f"mcq-refine-not-used:{mcq_refine_meta.get('reason')}",
-                }
+            refined_top = _safe_float(mcq_refine_meta.get("y_anchor_top"), -1.0)
+            refined_bottom = _safe_float(mcq_refine_meta.get("y_anchor_bottom"), -1.0)
+            refined_line_h = _safe_float(mcq_refine_meta.get("line_h"), -1.0)
+            if refined_top > 0.0 and refined_bottom > refined_top:
+                mcq_geometry["top_center_y"] = float(refined_top)
+                mcq_geometry["bottom_center_y"] = float(refined_bottom)
+            if refined_line_h > 0.0:
+                roi_line_h_hint = float(mcq_roi["h"]) / max(2.0, float(rows_per_block))
+                min_line_h = 0.60 * float(roi_line_h_hint)
+                max_line_h = 1.35 * float(roi_line_h_hint)
+                if min_line_h <= refined_line_h <= max_line_h:
+                    mcq_geometry["line_h"] = float(refined_line_h)
+                else:
+                    warning_codes.append("MCQ_REFINE_LINEH_REJECTED")
+                    warnings.append("Bo qua line-height tu refine ROI MCQ do vuot nguong hop le.")
+            anchor_distance = float(refined_bottom - refined_top)
+            mcq_anchor_height_meta = {
+                "used": bool(anchor_distance > 0.0),
+                "reason": "derived-from-refine-mcq-roi",
+                "y_top_anchor": round(float(refined_top), 4),
+                "y_bottom_anchor": round(float(refined_bottom), 4),
+                "anchor_distance": round(float(anchor_distance), 4),
+                "line_h": round(float(refined_line_h), 4) if refined_line_h > 0.0 else None,
+                "match_count": _safe_int(mcq_refine_meta.get("matches"), 0),
+                "top_markers": list(mcq_refine_meta.get("top_row_centers") or []),
+                "bottom_markers": list(mcq_refine_meta.get("bottom_row_centers") or []),
+                "refined_roi": dict(mcq_roi),
+            }
+        else:
+            mcq_anchor_height_meta = {
+                "used": False,
+                "reason": f"mcq-refine-not-used:{mcq_refine_meta.get('reason')}",
+            }
 
-        if mcq_roi_cfg is None:
-            left_expand_px = max(6, min(20, int(round(0.012 * float(mcq_roi["w"])))))
-            if left_expand_px > 0:
-                new_x = max(0, int(mcq_roi["x"]) - int(left_expand_px))
-                gained = int(mcq_roi["x"]) - int(new_x)
-                if gained > 0:
-                    mcq_roi["x"] = int(new_x)
-                    mcq_roi["w"] = int(min(WIDTH_IMG - int(new_x), int(mcq_roi["w"]) + int(gained)))
-                    mcq_crop_clean = img_std[
-                        mcq_roi["y"] : mcq_roi["y"] + mcq_roi["h"],
-                        mcq_roi["x"] : mcq_roi["x"] + mcq_roi["w"],
-                    ]
+        left_expand_px = max(6, min(20, int(round(0.012 * float(mcq_roi["w"]))))) #nới che ROI MCQ sang trái để tránh mất các cột câu hỏi ngoài cùng bên trái khi scan lệch
+        if left_expand_px > 0:
+            new_x = max(0, int(mcq_roi["x"]) - int(left_expand_px))
+            gained = int(mcq_roi["x"]) - int(new_x)
+            if gained > 0:
+                mcq_roi["x"] = int(new_x)
+                mcq_roi["w"] = int(min(WIDTH_IMG - int(new_x), int(mcq_roi["w"]) + int(gained)))
+                mcq_crop_clean = img_std[
+                    mcq_roi["y"] : mcq_roi["y"] + mcq_roi["h"],
+                    mcq_roi["x"] : mcq_roi["x"] + mcq_roi["w"],
+                ]
 
         handwriting_cfg = _parse_handwriting_config(profile_handwriting_fields)
         handwriting_rois = _build_handwriting_rois(
@@ -1309,9 +1324,6 @@ def process_omr_exam(
         )
 
         mcq_cfg = _parse_mcq_decode_config(profile_mcq_decode)
-        if density_only_scoring:
-            mcq_cfg = dict(mcq_cfg)
-            mcq_cfg["density_only_scoring"] = True
         mcq_rescue_disabled = bool(profile_disable_mcq_rescue)
         if long_form_mode:
             profile_mcq_decode_raw = profile_mcq_decode if isinstance(profile_mcq_decode, dict) else {}
@@ -1464,32 +1476,31 @@ def process_omr_exam(
             mcq_decode_x_source = str(mcq_block_bands_meta.get("source") or "block-bands")
         elif long_form_mode:
             roi_w = float(mcq_roi["w"])
-            if geom_right_x - geom_left_x >= max(120.0, roi_w * 0.45):
-                anchor_left_x = float(geom_left_x)
-                if fid_left_x > 0.0 and fid_left_x < anchor_left_x and (anchor_left_x - fid_left_x) <= max(80.0, 0.12 * float(WIDTH_IMG)):
-                    anchor_left_x = float(fid_left_x)
-                anchor_right_x = float(geom_right_x)
-                if fid_right_x > anchor_right_x and (fid_right_x - anchor_right_x) <= max(35.0, 0.04 * float(WIDTH_IMG)):
-                    anchor_right_x = float(fid_right_x)
-                mcq_decode_x_source = "bubble-span-long-form"
-            elif fid_right_x - fid_left_x >= max(120.0, roi_w * 0.35):
-                anchor_left_x = float(fid_left_x)
-                anchor_right_x = float(fid_right_x)
-                mcq_decode_x_source = "fid-span-long-form"
+            picked = _pick_mcq_x_span(
+                geom_left_x, geom_right_x, fid_left_x, fid_right_x, roi_w,
+                geom_ratio=0.45, geom_floor=120.0,
+                fid_ratio=0.35, fid_floor=120.0,
+                source_geom="bubble-span-long-form", source_fid="fid-span-long-form",
+                apply_fid_nudge=True, width_img=float(WIDTH_IMG),
+            )
+            if picked is not None:
+                anchor_left_x, anchor_right_x, mcq_decode_x_source = picked
             else:
                 anchor_left_x = float(mcq_roi["x"] + 0.06 * roi_w)
                 anchor_right_x = float(mcq_roi["x"] + 0.94 * roi_w)
                 mcq_decode_x_source = "roi-fallback-long-form"
                 warning_codes.append("MCQ_LONG_FORM_X_FALLBACK")
                 warnings.append("Long-form: khong du local marker X hop le, fallback sang pham vi ROI rong theo tung block.")
-        elif geom_right_x - geom_left_x >= float(mcq_roi["w"]) * 0.45:
-            anchor_left_x = float(geom_left_x)
-            anchor_right_x = float(geom_right_x)
-            mcq_decode_x_source = "bubble-span"
-        elif fid_right_x - fid_left_x >= float(mcq_roi["w"]) * 0.45:
-            anchor_left_x = float(fid_left_x)
-            anchor_right_x = float(fid_right_x)
-            mcq_decode_x_source = "fid-span"
+        else:
+            picked = _pick_mcq_x_span(
+                geom_left_x, geom_right_x, fid_left_x, fid_right_x, float(mcq_roi["w"]),
+                geom_ratio=0.45, geom_floor=0.0,
+                fid_ratio=0.45, fid_floor=0.0,
+                source_geom="bubble-span", source_fid="fid-span",
+                apply_fid_nudge=False,
+            )
+            if picked is not None:
+                anchor_left_x, anchor_right_x, mcq_decode_x_source = picked
 
         anchor_left_x = max(float(mcq_roi["x"]), float(anchor_left_x))
         anchor_right_x = min(float(mcq_roi["x"] + mcq_roi["w"]), float(anchor_right_x))
@@ -1707,56 +1718,6 @@ def process_omr_exam(
                 "gate": int(search_uncertain_gate),
             }
 
-        drift_suspected = _detect_q5_start_drift(mcq_result, mcq_cfg["min_mark_score"])
-        auto_expand = False
-        auto_expand_lines = 0
-
-        if drift_suspected:
-            warning_codes.append("MCQ_COORD_DRIFT")
-            if not mcq_rescue_disabled:
-                expand_lines = 4
-                expand_px = int(round(float(expand_lines) * float(line_h)))
-                retry_roi = dict(mcq_roi)
-                if expand_px > 0:
-                    y_new = max(0, int(retry_roi["y"]) - int(expand_px))
-                    gained = int(retry_roi["y"]) - y_new
-                    retry_roi["y"] = int(y_new)
-                    retry_roi["h"] = int(min(HEIGHT_IMG - retry_roi["y"], int(retry_roi["h"]) + gained))
-
-                retry_top_center = float(top_center_y - float(expand_lines) * float(line_h))
-                if retry_top_center < (retry_roi["y"] + 0.25 * line_h):
-                    retry_top_center = float(retry_roi["y"] + 0.5 * line_h)
-
-                retry = _decode_mcq_with_map(
-                    gray_norm,
-                    binary_inv,
-                    retry_roi,
-                    questions=questions,
-                    choices=choices,
-                    rows_per_block=rows_per_block,
-                    block_count=block_count,
-                    left_x=anchor_left_x,
-                    right_x=anchor_right_x,
-                    top_center_y=retry_top_center,
-                    line_h=line_h,
-                    decode_cfg=mcq_cfg,
-                    top_shift_px=0.0,
-                    block_bands=mcq_block_bands,
-                )
-
-                if _mcq_quality(retry) >= _mcq_quality(mcq_result):
-                    mcq_result = retry
-                    mcq_roi = retry_roi
-                    top_center_y = float(retry_top_center)
-                    auto_expand = True
-                    auto_expand_lines = int(expand_lines)
-                    warning_codes.append("MCQ_AUTO_EXPAND_UP")
-                    warnings.append("Phat hien roi MCQ co dau hieu bat dau tu cau 5, da tu dong mo rong ROI len 4 dong.")
-                else:
-                    warnings.append("Phat hien drift roi MCQ nhung thu nghiem mo rong len khong tot hon decode hien tai.")
-            else:
-                warnings.append("Phat hien drift roi MCQ nhung rescue tu dong dang bi khoa.")
-
         user_answers = list(mcq_result.get("user_answers") or [])
         if len(user_answers) < questions:
             user_answers.extend([-1] * (questions - len(user_answers)))
@@ -1875,16 +1836,18 @@ def process_omr_exam(
         cv2.imwrite(sid_crop_path, sid_crop)
         cv2.imwrite(mcq_crop_path, mcq_crop)
 
+        roi_boxes_payload = {
+            "student_id": sid_roi,
+            "exam_code": code_roi,
+            "mcq": mcq_roi,
+            "handwriting": handwriting_rois,
+        }
+
         bubble_payload = {
             "pipeline_version": "omr-coordinate-map-v1",
             "image": os.path.basename(image_path),
             "warp_strategy": str(warp_strategy),
-            "roi_boxes": {
-                "student_id": sid_roi,
-                "exam_code": code_roi,
-                "mcq": mcq_roi,
-                "handwriting": handwriting_rois,
-            },
+            "roi_boxes": roi_boxes_payload,
             "coordinate_mapping": {
                 "global_warp": bool(global_warp_used),
                 "global_warp_target": {"width": int(A4_WARP_W), "height": int(A4_WARP_H)},
@@ -1907,9 +1870,6 @@ def process_omr_exam(
                 "row_offsets_source": str(mcq_row_offsets_meta.get("source") or "none"),
                 "row_offsets_meta": mcq_row_offsets_meta,
                 "line_height_px": round(float(line_h), 4),
-                "drift_suspected": bool(drift_suspected),
-                "auto_expand_upward": bool(auto_expand),
-                "auto_expand_lines": int(auto_expand_lines),
                 "mcq_map_search": mcq_map_search_meta,
                 "fid_top_y": round(float(_safe_float(mcq_geometry.get("fid_top_y"), 0.0)), 4),
                 "fid_bottom_y": round(float(_safe_float(mcq_geometry.get("fid_bottom_y"), 0.0)), 4),
@@ -1944,7 +1904,7 @@ def process_omr_exam(
             warp_layout_score += 0.10
 
         roi_strategy = "coordinate-mapping-anchor-grid"
-        if sid_roi_cfg is not None or code_roi_cfg is not None or mcq_roi_cfg is not None:
+        if sid_roi_cfg is not None:
             roi_strategy += " + profile-roi"
         if anchor_fallback_used:
             roi_strategy += " + percent-fallback"
@@ -1994,24 +1954,9 @@ def process_omr_exam(
             "uncertain_count": int(uncertain_count),
             "wrong_questions": wrong_questions,
             "double_mark_questions": double_mark_questions,
-            "roi_boxes": {
-                "student_id": sid_roi,
-                "exam_code": code_roi,
-                "mcq": mcq_roi,
-                "handwriting": handwriting_rois,
-            },
-            "roi_boxes_refined": {
-                "student_id": sid_roi,
-                "exam_code": code_roi,
-                "mcq": mcq_roi,
-                "handwriting": handwriting_rois,
-            },
-            "roi_boxes_json": {
-                "student_id": sid_roi,
-                "exam_code": code_roi,
-                "mcq": mcq_roi,
-                "handwriting": handwriting_rois,
-            },
+            "roi_boxes": roi_boxes_payload,
+            "roi_boxes_refined": roi_boxes_payload,
+            "roi_boxes_json": roi_boxes_payload,
             "handwriting_fields": handwriting_payload.get("values") or {},
             "handwriting": {
                 "enabled": bool(handwriting_payload.get("enabled", False)),
@@ -2041,9 +1986,6 @@ def process_omr_exam(
                 "coordinate_mapping_mcq_anchor_height_used": bool(mcq_anchor_height_meta.get("used", False)),
                 "coordinate_mapping_mcq_anchor_height_reason": str(mcq_anchor_height_meta.get("reason") or ""),
                 "coordinate_mapping_mcq_line_height_px": round(float(line_h), 4),
-                "coordinate_mapping_mcq_drift_suspected": bool(drift_suspected),
-                "coordinate_mapping_mcq_auto_expand_upward": bool(auto_expand),
-                "coordinate_mapping_mcq_auto_expand_lines": int(auto_expand_lines),
                 "coordinate_mapping_mcq_map_search_used": bool(mcq_map_search_meta.get("used", False)),
                 "coordinate_mapping_mcq_map_search_reason": str(mcq_map_search_meta.get("reason") or ""),
                 "coordinate_mapping_mcq_q1_y": round(float(top_center_y), 4),

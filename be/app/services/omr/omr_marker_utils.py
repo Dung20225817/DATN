@@ -16,7 +16,7 @@ def _extract_black_square_markers(
         return []
 
     h, w = binary_img.shape[:2]
-    total_area = float(max(1, h * w))
+    total_area = float(max(1, h * w))  #tong pixel
 
     prep = cv2.morphologyEx(binary_img, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
     prep = cv2.morphologyEx(prep, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
@@ -30,48 +30,48 @@ def _extract_black_square_markers(
         x, y, bw, bh, area = stats[idx]
         area = int(area)
         if area < min_area or area > max_area:
-            continue
+            continue  # diện tích quá nhỏ (nhiễu) hoặc quá lớn
         if bw < 4 or bh < 4:
-            continue
+            continue  # bounding box quá nhỏ
 
         aspect = float(bw) / max(1.0, float(bh))
         if not (0.62 <= aspect <= 1.55):
-            continue
+            continue  # tỉ lệ cạnh không gần vuông
 
         rect_area = float(max(1, bw * bh))
         fill_ratio = float(area) / rect_area
         if fill_ratio < float(min_fill_ratio):
-            continue
+            continue  # không đặc, rỗng nhiều so với bounding box
 
         comp_mask = (labels[y:y + bh, x:x + bw] == int(idx)).astype(np.uint8) * 255
         cnts, _ = cv2.findContours(comp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not cnts:
-            continue
+            continue  # không tìm được contour
 
         cnt = max(cnts, key=cv2.contourArea)
         contour_area = float(cv2.contourArea(cnt))
         if contour_area < float(area) * 0.55:
-            continue
+            continue  # contour không khớp diện tích pixel gốc
 
         peri = float(cv2.arcLength(cnt, True))
         if peri <= 0:
-            continue
+            continue  # chu vi suy biến
 
         approx = cv2.approxPolyDP(cnt, 0.08 * peri, True)
         vertex_count = int(len(approx))
         if vertex_count < 4 or vertex_count > 8:
-            continue
+            continue  # số đỉnh xấp xỉ không giống hình vuông/chữ nhật
 
         hull = cv2.convexHull(cnt)
         hull_area = float(cv2.contourArea(hull))
         solidity = contour_area / max(1.0, hull_area)
         if solidity < 0.82:
-            continue
+            continue  # hình lõm, không đặc (solidity thấp)
 
         # Reject near-circular blobs (often filled answer bubbles) when square evidence is weak.
         circularity = float((4.0 * math.pi * contour_area) / max(1.0, (peri * peri)))
         if circularity > 0.90 and fill_ratio < 0.92 and vertex_count > 5:
-            continue
+            continue  # giống hình tròn (khả năng là bubble tô đen), không phải marker vuông
 
         cx = float(centroids[idx][0])
         cy = float(centroids[idx][1])

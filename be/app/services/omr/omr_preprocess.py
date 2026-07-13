@@ -60,13 +60,13 @@ def _find_page_quad_by_contour(gray_img: np.ndarray) -> Optional[np.ndarray]:
         if peri <= 0.0:
             continue
 
-        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)  # xấp xỉ contour thành đa giác ít đỉnh
         if len(approx) == 4:
             pts = approx.reshape(4, 2).astype(np.float32)
             return _order_quad_points(pts)
 
-        rect = cv2.minAreaRect(cnt)
-        box = cv2.boxPoints(rect)
+        rect = cv2.minAreaRect(cnt)  # fallback: hình chữ nhật xoay nhỏ nhất bao contour
+        box = cv2.boxPoints(rect)  # lấy 4 đỉnh của hình chữ nhật xoay đó
         if box is not None and len(box) == 4:
             box = box.astype(np.float32)
             box_area = float(cv2.contourArea(box))
@@ -130,34 +130,14 @@ def _warp_to_standard_layout(
     return resized, strategy, global_warp_used, info
 
 
-def _binarize(gray_img: np.ndarray, threshold_mode: Optional[str]):
-    mode = str(threshold_mode or "otsu").strip().lower()
-    if mode not in {"otsu", "weighted_adaptive", "hybrid"}:
-        mode = "otsu"
-
+def _binarize(gray_img: np.ndarray):
     h, w = gray_img.shape[:2]
     k = max(31, (min(h, w) // 9) | 1)
     bg = cv2.morphologyEx(gray_img, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
     gray_norm = cv2.divide(gray_img, bg, scale=255)
     gray_norm = cv2.GaussianBlur(gray_norm, (3, 3), 0)
 
-    otsu_value, otsu_inv = cv2.threshold(gray_norm, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    adaptive_inv = cv2.adaptiveThreshold(
-        gray_norm,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV,
-        35,
-        7,
-    )
-
-    if mode == "weighted_adaptive":
-        binary_inv = adaptive_inv
-    elif mode == "hybrid":
-        binary_inv = cv2.bitwise_or(otsu_inv, adaptive_inv)
-    else:
-        binary_inv = otsu_inv
-        mode = "otsu"
+    otsu_value, binary_inv = cv2.threshold(gray_norm, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
     binary_inv = cv2.morphologyEx(binary_inv, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
-    return gray_norm, binary_inv, {"mode": mode, "otsu_value": float(otsu_value)}
+    return gray_norm, binary_inv, {"mode": "otsu", "otsu_value": float(otsu_value)}

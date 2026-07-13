@@ -39,12 +39,9 @@ class Omr120FlowTests(unittest.TestCase):
             sid_has_write_row=runtime["sid_has_write_row"],
             profile_sid_roi=runtime["profile_sid_roi"],
             profile_sid_roi_lock=runtime["profile_sid_roi_lock"],
-            profile_mcq_roi=runtime["profile_mcq_roi"],
-            profile_exam_code_roi=runtime["profile_exam_code_roi"],
             profile_sid_row_offsets=runtime["profile_sid_row_offsets"],
             profile_disable_mcq_rescue=runtime["profile_disable_mcq_rescue"],
             profile_mcq_decode=runtime["profile_mcq_decode"],
-            profile_threshold_mode=runtime["profile_threshold_mode"],
             profile_page_size_pt=runtime["profile_page_size_pt"],
             profile_handwriting_fields=runtime["profile_handwriting_fields"],
         )
@@ -75,12 +72,9 @@ class Omr120FlowTests(unittest.TestCase):
             sid_has_write_row=runtime["sid_has_write_row"],
             profile_sid_roi=runtime["profile_sid_roi"],
             profile_sid_roi_lock=runtime["profile_sid_roi_lock"],
-            profile_mcq_roi=runtime["profile_mcq_roi"],
-            profile_exam_code_roi=runtime["profile_exam_code_roi"],
             profile_sid_row_offsets=runtime["profile_sid_row_offsets"],
             profile_disable_mcq_rescue=runtime["profile_disable_mcq_rescue"],
             profile_mcq_decode=runtime["profile_mcq_decode"],
-            profile_threshold_mode=runtime["profile_threshold_mode"],
             profile_page_size_pt=runtime["profile_page_size_pt"],
             profile_handwriting_fields=runtime["profile_handwriting_fields"],
         )
@@ -117,8 +111,6 @@ class Omr120FlowTests(unittest.TestCase):
             img_h=1400,
             rows_per_block=30,
             sid_roi_cfg=None,
-            code_roi_cfg=None,
-            mcq_roi_cfg=None,
             block_count_hint=4,
         )
         sid_roi = rois["sid"]

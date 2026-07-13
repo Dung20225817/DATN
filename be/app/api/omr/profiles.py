@@ -96,7 +96,6 @@ async def save_form_profile(payload: Dict[str, Any] = Body(...)):
         ),
         "sid_row_offsets": _sanitize_sid_row_offsets(strategy_in.get("sid_row_offsets") if "sid_row_offsets" in strategy_in else existing_strategy.get("sid_row_offsets")),
         "mcq_decode": _sanitize_mcq_decode(strategy_in.get("mcq_decode") if "mcq_decode" in strategy_in else existing_strategy.get("mcq_decode")),
-        "threshold_mode": _sanitize_threshold_mode(strategy_in.get("threshold_mode") if "threshold_mode" in strategy_in else existing_strategy.get("threshold_mode")),
         "disable_mcq_rescue": bool(parsed_disable_rescue) if parsed_disable_rescue is not None else False,
         "sid_roi_lock": bool(parsed_sid_roi_lock) if parsed_sid_roi_lock is not None else False,
     }

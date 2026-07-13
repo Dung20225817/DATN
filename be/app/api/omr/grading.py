@@ -20,7 +20,6 @@ async def grade_exam(
     student_id_digits: int = Form(6),
     sid_has_write_row: bool = Form(False),
     disable_mcq_rescue: Optional[bool] = Form(default=None, description="Tắt MCQ Map Search Rescue (dùng cho ablation eval)"),
-    density_only_scoring: Optional[bool] = Form(default=None, description="Chỉ dùng density (bỏ darkness) khi tính điểm bong bóng (ablation)"),
     db: Session = Depends(get_db),
 ):
     try:
@@ -39,7 +38,6 @@ async def grade_exam(
         )
         if disable_mcq_rescue is not None:
             runtime["profile_disable_mcq_rescue"] = disable_mcq_rescue
-        runtime["density_only_scoring"] = bool(density_only_scoring)
 
         num_questions = runtime["num_questions"]
         num_choices = runtime["num_choices"]
@@ -140,13 +138,9 @@ async def grade_exam(
             sid_has_write_row=sid_has_write_row,
             profile_sid_roi=runtime["profile_sid_roi"],
             profile_sid_roi_lock=runtime["profile_sid_roi_lock"],
-            profile_mcq_roi=runtime["profile_mcq_roi"],
-            profile_exam_code_roi=runtime["profile_exam_code_roi"],
             profile_sid_row_offsets=runtime["profile_sid_row_offsets"],
             profile_disable_mcq_rescue=runtime["profile_disable_mcq_rescue"],
-            density_only_scoring=runtime["density_only_scoring"],
             profile_mcq_decode=runtime["profile_mcq_decode"],
-            profile_threshold_mode=runtime["profile_threshold_mode"],
             profile_corner_markers=runtime["profile_corner_markers"],
             profile_scanner_hint=runtime["profile_scanner_hint"],
             profile_page_size_pt=runtime["profile_page_size_pt"],
@@ -362,12 +356,9 @@ async def grade_exam_batch(
                 sid_has_write_row=sid_has_write_row,
                 profile_sid_roi=runtime["profile_sid_roi"],
                 profile_sid_roi_lock=runtime["profile_sid_roi_lock"],
-                profile_mcq_roi=runtime["profile_mcq_roi"],
-                profile_exam_code_roi=runtime["profile_exam_code_roi"],
                 profile_sid_row_offsets=runtime["profile_sid_row_offsets"],
                 profile_disable_mcq_rescue=runtime["profile_disable_mcq_rescue"],
                 profile_mcq_decode=runtime["profile_mcq_decode"],
-                profile_threshold_mode=runtime["profile_threshold_mode"],
                 profile_corner_markers=runtime["profile_corner_markers"],
                 profile_scanner_hint=runtime["profile_scanner_hint"],
                 profile_page_size_pt=runtime["profile_page_size_pt"],

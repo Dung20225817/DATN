@@ -408,14 +408,6 @@ def _sanitize_mcq_decode(raw: Any) -> Optional[dict]:
 
     return out or None
 
-def _sanitize_threshold_mode(raw: Any) -> Optional[str]:
-    if raw is None:
-        return None
-    mode = str(raw).strip().lower()
-    if mode in {"otsu", "weighted_adaptive", "hybrid"}:
-        return mode
-    return None
-
 def _sanitize_corner_markers(raw: Any) -> Optional[dict]:
     if not isinstance(raw, dict):
         return None
@@ -524,7 +516,6 @@ def _default_profile(sample_file: str) -> dict:
             "corner_markers": None,
             "scanner_hint": None,
             "page_size_pt": None,
-            "threshold_mode": None,
         },
     }
 
@@ -609,13 +600,10 @@ def _build_runtime_config(
         "student_id_digits": max(1, int(p.get("student_id_digits") or student_id_digits)),
         "sid_has_write_row": bool(p.get("sid_has_write_row") if "sid_has_write_row" in p else sid_has_write_row),
         "profile_sid_roi": _sanitize_norm_rect(strategy.get("sid_roi")),
-        "profile_mcq_roi": _sanitize_norm_rect(strategy.get("mcq_roi")),
-        "profile_exam_code_roi": _sanitize_norm_rect(strategy.get("exam_code_roi")),
         "profile_sid_roi_lock": bool(_sanitize_bool_flag(strategy.get("sid_roi_lock"))),
         "profile_sid_row_offsets": _sanitize_sid_row_offsets(strategy.get("sid_row_offsets")),
         "profile_disable_mcq_rescue": bool(parsed_disable_rescue) if parsed_disable_rescue is not None else False,
         "profile_mcq_decode": _sanitize_mcq_decode(strategy.get("mcq_decode")),
-        "profile_threshold_mode": _sanitize_threshold_mode(strategy.get("threshold_mode")),
         "profile_corner_markers": _sanitize_corner_markers(strategy.get("corner_markers")),
         "profile_scanner_hint": _sanitize_scanner_hint(strategy.get("scanner_hint")),
         "profile_page_size_pt": _sanitize_page_size_pt(strategy.get("page_size_pt")),
