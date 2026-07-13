@@ -68,7 +68,6 @@ export type ScannerStrategy = {
   handwriting_fields?: HandwritingFieldsStrategy | null;
   sid_row_offsets?: number[] | null;
   mcq_decode?: McqDecodeStrategy | null;
-  threshold_mode?: "otsu" | "weighted_adaptive" | "hybrid" | null;
   disable_mcq_rescue?: boolean;
   sid_roi_lock?: boolean;
   page_size_pt?: { width: number; height: number } | null;
